@@ -21,6 +21,7 @@ Usage:
 """
 
 import argparse
+import concurrent.futures
 import csv
 import glob
 import os
@@ -294,6 +295,12 @@ def main():
         choices=SIDE_ANGLE_CAMERAS,
         help="Which cameras to extract frames from (default: all four A-D)",
     )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        help="Number of parallel download threads (default: 8)",
+    )
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -327,22 +334,28 @@ def main():
     print()
 
     # Step 3: Download and resize overhead images
-    print("=== Downloading and resizing overhead RGB images ===")
+    print(f"=== Downloading and resizing overhead RGB images ({args.workers} threads) ===")
     counts = {"ok": 0, "skip": 0, "fail": 0}
     total = len(overhead_dish_ids)
 
-    for i, dish_id in enumerate(overhead_dish_ids, 1):
-        status = download_and_resize_image(dish_id, output_dir, args.resolution)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as executor:
+        future_to_dish = {
+            executor.submit(download_and_resize_image, dish_id, output_dir, args.resolution): dish_id
+            for dish_id in overhead_dish_ids
+        }
+        for i, future in enumerate(concurrent.futures.as_completed(future_to_dish), 1):
+            dish_id = future_to_dish[future]
+            status = future.result()
 
-        if status == "skip" and not args.no_skip_existing:
-            counts["skip"] += 1
-            if i % 100 == 0 or i == total:
-                print(f"  [{i}/{total}] Progress update - {counts['skip']} skipped so far")
-        elif status == "ok":
-            counts["ok"] += 1
-            print(f"  [{i}/{total}] {dish_id} - resized to {args.resolution}x{args.resolution}")
-        else:
-            counts["fail"] += 1
+            if status == "skip" and not args.no_skip_existing:
+                counts["skip"] += 1
+                if i % 100 == 0 or i == total:
+                    print(f"  [{i}/{total}] Progress update - {counts['skip']} skipped so far")
+            elif status == "ok":
+                counts["ok"] += 1
+                print(f"  [{i}/{total}] {dish_id} - resized to {args.resolution}x{args.resolution}")
+            else:
+                counts["fail"] += 1
 
     # Step 4: Side-angle video frames (optional)
     side_counts = {"ok": 0, "skip": 0, "fail": 0}
@@ -353,20 +366,27 @@ def main():
         side_total = len(side_dish_ids)
 
         print()
-        print(f"=== Downloading side-angle videos & extracting frames (every {args.frame_interval}th) ===")
-        for i, dish_id in enumerate(side_dish_ids, 1):
-            result = extract_and_resize_frames(
-                dish_id, output_dir, args.resolution,
-                args.frame_interval, args.cameras,
-            )
-            side_counts["ok"] += result["ok"]
-            side_counts["skip"] += result["skip"]
-            side_counts["fail"] += result["fail"]
+        print(f"=== Downloading side-angle videos & extracting frames (every {args.frame_interval}th, {args.workers} threads) ===")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as executor:
+            future_to_dish = {
+                executor.submit(
+                    extract_and_resize_frames,
+                    dish_id, output_dir, args.resolution,
+                    args.frame_interval, args.cameras,
+                ): dish_id
+                for dish_id in side_dish_ids
+            }
+            for i, future in enumerate(concurrent.futures.as_completed(future_to_dish), 1):
+                dish_id = future_to_dish[future]
+                result = future.result()
+                side_counts["ok"] += result["ok"]
+                side_counts["skip"] += result["skip"]
+                side_counts["fail"] += result["fail"]
 
-            if result["ok"] > 0:
-                print(f"  [{i}/{side_total}] {dish_id} - extracted frames from {result['ok']} camera(s)")
-            elif i % 100 == 0 or i == side_total:
-                print(f"  [{i}/{side_total}] Progress update")
+                if result["ok"] > 0:
+                    print(f"  [{i}/{side_total}] {dish_id} - extracted frames from {result['ok']} camera(s)")
+                elif i % 100 == 0 or i == side_total:
+                    print(f"  [{i}/{side_total}] Progress update")
 
     # Summary
     print()
