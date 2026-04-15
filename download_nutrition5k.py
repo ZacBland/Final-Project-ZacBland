@@ -9,7 +9,7 @@ Optionally downloads side-angle videos, extracts frames with ffmpeg, resizes
 them, and deletes the original video to conserve disk space.
 
 Prerequisites:
-    - gsutil (Google Cloud SDK) installed and on PATH
+    - gcloud CLI installed (https://cloud.google.com/sdk/docs/install)
     - pip install Pillow
     - ffmpeg installed (only needed with --include_side_angles)
 
@@ -39,7 +39,7 @@ SIDE_ANGLE_CAMERAS = ["camera_A", "camera_B", "camera_C", "camera_D"]
 METADATA_FILES = [
     "metadata/dish_metadata_cafe1.csv",
     "metadata/dish_metadata_cafe2.csv",
-    "metadata/ingredient_metadata.csv",
+    "metadata/ingredients_metadata.csv",
 ]
 
 SPLIT_FILES = [
@@ -48,11 +48,11 @@ SPLIT_FILES = [
 ]
 
 
-def gsutil_cp(src: str, dst: str) -> bool:
-    """Download a file from GCS. Returns True on success."""
+def gcloud_cp(src: str, dst: str) -> bool:
+    """Download a file from GCS using gcloud storage. Returns True on success."""
     try:
         subprocess.run(
-            ["gsutil", "-q", "cp", src, dst],
+            ["gcloud", "storage", "cp", src, dst],
             check=True,
             capture_output=True,
         )
@@ -61,7 +61,25 @@ def gsutil_cp(src: str, dst: str) -> bool:
         print(f"  Failed to download {src}: {e.stderr.decode().strip()}")
         return False
     except FileNotFoundError:
-        print("ERROR: gsutil not found. Install the Google Cloud SDK first.")
+        print("ERROR: gcloud CLI not found. Install the Google Cloud SDK first.")
+        print("  https://cloud.google.com/sdk/docs/install")
+        sys.exit(1)
+
+
+def gcloud_ls(gcs_path: str) -> list[str]:
+    """List objects in a GCS path. Returns list of GCS URIs."""
+    try:
+        result = subprocess.run(
+            ["gcloud", "storage", "ls", gcs_path],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return [line.strip() for line in result.stdout.strip().split("\n") if line.strip()]
+    except subprocess.CalledProcessError:
+        return []
+    except FileNotFoundError:
+        print("ERROR: gcloud CLI not found. Install the Google Cloud SDK first.")
         print("  https://cloud.google.com/sdk/docs/install")
         sys.exit(1)
 
@@ -77,13 +95,12 @@ def download_metadata(output_dir: Path) -> None:
         dst.parent.mkdir(parents=True, exist_ok=True)
         src = f"{GCS_BUCKET}/{rel_path}"
         print(f"  Downloading {rel_path} ...")
-        if gsutil_cp(src, str(dst)):
+        if gcloud_cp(src, str(dst)):
             print(f"  [ok]   {rel_path}")
-        # If it fails, try alternate split file names
     print()
 
 
-def get_dish_ids(output_dir: Path) -> list[str]:
+def get_dish_ids_from_metadata(output_dir: Path) -> list[str]:
     """Extract unique dish IDs from the metadata CSVs."""
     dish_ids = set()
     for csv_name in ["metadata/dish_metadata_cafe1.csv", "metadata/dish_metadata_cafe2.csv"]:
@@ -96,6 +113,19 @@ def get_dish_ids(output_dir: Path) -> list[str]:
             for row in reader:
                 if row and row[0].startswith("dish_"):
                     dish_ids.add(row[0].strip())
+    return sorted(dish_ids)
+
+
+def get_overhead_dish_ids() -> list[str]:
+    """List dish IDs that have overhead images in the GCS bucket."""
+    print("  Listing available overhead dishes from GCS bucket...")
+    entries = gcloud_ls(f"{GCS_BUCKET}/imagery/realsense_overhead/")
+    dish_ids = []
+    for entry in entries:
+        # Entries look like: gs://.../realsense_overhead/dish_XXXXXXXXXX/
+        name = entry.rstrip("/").split("/")[-1]
+        if name.startswith("dish_"):
+            dish_ids.append(name)
     return sorted(dish_ids)
 
 
@@ -119,7 +149,7 @@ def download_and_resize_image(
         tmp_path = tmp.name
 
     try:
-        if not gsutil_cp(gcs_path, tmp_path):
+        if not gcloud_cp(gcs_path, tmp_path):
             return "fail"
 
         # Resize and save
@@ -130,12 +160,10 @@ def download_and_resize_image(
         return "ok"
     except Exception as e:
         print(f"  Error processing {dish_id}: {e}")
-        # Clean up partial output
         if final_path.exists():
             final_path.unlink()
         return "fail"
     finally:
-        # Always clean up temp file
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
 
@@ -171,12 +199,11 @@ def extract_and_resize_frames(
         os.makedirs(tmp_frames_dir, exist_ok=True)
 
         try:
-            if not gsutil_cp(gcs_path, tmp_video):
+            if not gcloud_cp(gcs_path, tmp_video):
                 counts["fail"] += 1
                 continue
 
             # Extract every Nth frame using ffmpeg
-            # -vsync vfr avoids duplicate frames; select filter picks every Nth
             ffmpeg_cmd = [
                 "ffmpeg", "-y", "-i", tmp_video,
                 "-vf", f"select=not(mod(n\\,{frame_interval}))",
@@ -213,7 +240,6 @@ def extract_and_resize_frames(
 
         except Exception as e:
             print(f"  Error processing {dish_id}/{camera}: {e}")
-            # Clean up partial output
             if frames_dir.exists() and not any(frames_dir.iterdir()):
                 frames_dir.rmdir()
             counts["fail"] += 1
@@ -225,7 +251,7 @@ def extract_and_resize_frames(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Download and resize Nutrition5k overhead RGB images."
+        description="Download and resize Nutrition5k images."
     )
     parser.add_argument(
         "--output_dir",
@@ -282,30 +308,34 @@ def main():
     # Step 1: Download metadata
     download_metadata(output_dir)
 
-    # Step 2: Get dish IDs
-    print("=== Collecting dish IDs from metadata ===")
-    dish_ids = get_dish_ids(output_dir)
-    if not dish_ids:
-        print("ERROR: No dish IDs found. Check that metadata downloaded correctly.")
+    # Step 2: Get dish IDs that actually have overhead images
+    print("=== Collecting dish IDs ===")
+    overhead_dish_ids = get_overhead_dish_ids()
+    if not overhead_dish_ids:
+        print("ERROR: No overhead dish IDs found in GCS bucket.")
         sys.exit(1)
-    print(f"  Found {len(dish_ids)} dishes")
+    print(f"  Found {len(overhead_dish_ids)} dishes with overhead images")
+
+    # Also get all dish IDs from metadata for side angles
+    all_dish_ids = get_dish_ids_from_metadata(output_dir)
+    print(f"  Found {len(all_dish_ids)} total dishes in metadata")
 
     if args.max_dishes:
-        dish_ids = dish_ids[: args.max_dishes]
+        overhead_dish_ids = overhead_dish_ids[: args.max_dishes]
+        all_dish_ids = all_dish_ids[: args.max_dishes]
         print(f"  Limited to first {args.max_dishes} dishes")
     print()
 
-    # Step 3: Download and resize images
+    # Step 3: Download and resize overhead images
     print("=== Downloading and resizing overhead RGB images ===")
     counts = {"ok": 0, "skip": 0, "fail": 0}
-    total = len(dish_ids)
+    total = len(overhead_dish_ids)
 
-    for i, dish_id in enumerate(dish_ids, 1):
+    for i, dish_id in enumerate(overhead_dish_ids, 1):
         status = download_and_resize_image(dish_id, output_dir, args.resolution)
 
         if status == "skip" and not args.no_skip_existing:
             counts["skip"] += 1
-            # Print skip status less frequently to reduce noise
             if i % 100 == 0 or i == total:
                 print(f"  [{i}/{total}] Progress update - {counts['skip']} skipped so far")
         elif status == "ok":
@@ -317,9 +347,14 @@ def main():
     # Step 4: Side-angle video frames (optional)
     side_counts = {"ok": 0, "skip": 0, "fail": 0}
     if args.include_side_angles:
+        side_dish_ids = all_dish_ids
+        if args.max_dishes:
+            side_dish_ids = side_dish_ids[: args.max_dishes]
+        side_total = len(side_dish_ids)
+
         print()
         print(f"=== Downloading side-angle videos & extracting frames (every {args.frame_interval}th) ===")
-        for i, dish_id in enumerate(dish_ids, 1):
+        for i, dish_id in enumerate(side_dish_ids, 1):
             result = extract_and_resize_frames(
                 dish_id, output_dir, args.resolution,
                 args.frame_interval, args.cameras,
@@ -328,11 +363,10 @@ def main():
             side_counts["skip"] += result["skip"]
             side_counts["fail"] += result["fail"]
 
-            # Progress for non-skipped
             if result["ok"] > 0:
-                print(f"  [{i}/{total}] {dish_id} - extracted frames from {result['ok']} camera(s)")
-            elif i % 100 == 0 or i == total:
-                print(f"  [{i}/{total}] Progress update")
+                print(f"  [{i}/{side_total}] {dish_id} - extracted frames from {result['ok']} camera(s)")
+            elif i % 100 == 0 or i == side_total:
+                print(f"  [{i}/{side_total}] Progress update")
 
     # Summary
     print()
@@ -348,7 +382,7 @@ def main():
         print(f"  Cameras processed:  {side_counts['ok']}")
         print(f"  Cameras skipped:    {side_counts['skip']}")
         print(f"  Cameras failed:     {side_counts['fail']}")
-        total_cameras = total * len(args.cameras)
+        total_cameras = len(side_dish_ids) * len(args.cameras)
         print(f"  Total camera/dish:  {total_cameras}")
 
 
