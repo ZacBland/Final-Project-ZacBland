@@ -366,10 +366,14 @@ def main():
         transforms.Resize(320),
         transforms.CenterCrop(299),
         transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(15),
+        transforms.RandomAffine(degrees=0, scale=(0.85, 1.15)),
         transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                              std=[0.229, 0.224, 0.225]),
+        transforms.RandomApply([transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 1.0))], p=0.3),
+        transforms.RandomErasing(p=0.2, scale=(0.02, 0.1)),
     ])
 
     # Side-angle training transform (images are pre-flipped at download time)
@@ -377,10 +381,14 @@ def main():
         transforms.Resize(320),
         transforms.CenterCrop(299),
         transforms.RandomHorizontalFlip(),
+        transforms.RandomRotation(15),
+        transforms.RandomAffine(degrees=0, scale=(0.85, 1.15)),
         transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                              std=[0.229, 0.224, 0.225]),
+        transforms.RandomApply([transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 1.0))], p=0.3),
+        transforms.RandomErasing(p=0.2, scale=(0.02, 0.1)),
     ])
 
     val_transform = transforms.Compose([
