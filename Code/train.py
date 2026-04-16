@@ -443,13 +443,47 @@ def main():
     # --- Model ---
     print("=== Building model ===")
     model = NutritionModel().to(device)
-    print(f"  Parameters: {sum(p.numel() for p in model.parameters()):,}")
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print(f"  Parameters: {total_params:,} ({trainable_params:,} trainable)")
     print()
 
     # --- Optimizer, loss, scheduler ---
     optimizer = torch.optim.RMSprop(model.parameters(), lr=LEARNING_RATE)
     criterion = nn.L1Loss()
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
+
+    # --- Save model summary ---
+    summary_path = os.path.join(CHECKPOINT_DIR, "model_summary.txt")
+    with open(summary_path, "w") as f:
+        f.write("Nutrition5k Model Summary\n")
+        f.write("=" * 60 + "\n\n")
+        f.write(f"Device:              {device}\n")
+        f.write(f"Backbone:            InceptionV3 (ImageNet pretrained)\n")
+        f.write(f"Input size:          299x299 RGB\n")
+        f.write(f"Outputs:             {', '.join(LABEL_NAMES)}\n")
+        f.write(f"Loss function:       L1 (MAE)\n")
+        f.write(f"Optimizer:           RMSProp (lr={LEARNING_RATE})\n")
+        f.write(f"LR scheduler:        StepLR (step=10, gamma=0.5)\n")
+        f.write(f"Batch size:          {BATCH_SIZE}\n")
+        f.write(f"Epochs:              {EPOCHS}\n")
+        f.write(f"Val split:           {VAL_SPLIT}\n")
+        f.write(f"Image sources:       {IMAGE_SOURCES}\n")
+        f.write(f"Side cameras:        {SIDE_CAMERAS}\n")
+        f.write(f"Side vflip prob:     {SIDE_ANGLE_VFLIP_PROB}\n")
+        f.write(f"Train samples:       {n_train}\n")
+        f.write(f"Val samples:         {n_val}\n")
+        f.write(f"Total parameters:    {total_params:,}\n")
+        f.write(f"Trainable params:    {trainable_params:,}\n\n")
+        f.write("Architecture\n")
+        f.write("-" * 60 + "\n")
+        f.write(str(model))
+        f.write("\n\n")
+        f.write("Per-layer Parameter Counts\n")
+        f.write("-" * 60 + "\n")
+        for name, param in model.named_parameters():
+            f.write(f"  {name:<55} {param.numel():>12,}  {'train' if param.requires_grad else 'frozen'}\n")
+    print(f"  Model summary saved to {summary_path}")
 
     # --- Training loop ---
     print("=== Training ===")
