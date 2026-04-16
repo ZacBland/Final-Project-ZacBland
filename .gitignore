@@ -218,3 +218,4 @@ __marimo__/
 .idea/
 vscode/
 data/imagery/
+google-cloud*
