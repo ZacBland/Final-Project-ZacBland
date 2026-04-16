@@ -174,12 +174,15 @@ class NutritionModel(nn.Module):
         super().__init__()
 
         # InceptionV3 backbone (pretrained on ImageNet)
-        backbone = models.inception_v3(
+        # Pretrained weights require aux_logits=True; we disable after loading
+        self.backbone = models.inception_v3(
             weights=models.Inception_V3_Weights.IMAGENET1K_V1,
-            aux_logits=False,
+            aux_logits=True,
         )
-        # Remove the final FC layer — we use the 2048-dim feature vector
-        self.backbone = nn.Sequential(*list(backbone.children())[:-1])
+        self.backbone.aux_logits = False
+        self.backbone.AuxLogits = None
+        # Replace the classification head with identity to get 2048-dim features
+        self.backbone.fc = nn.Identity()
 
         # Shared FC layers (paper: 2x 4096-dim)
         self.shared = nn.Sequential(
