@@ -12,9 +12,13 @@ Configure all settings via the global variables below, then run:
 
 import csv
 import glob
+import json
 import os
 import time
 
+import matplotlib
+matplotlib.use("Agg")  # non-interactive backend for servers
+import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader, random_split
@@ -32,6 +36,7 @@ BATCH_SIZE = 32
 LEARNING_RATE = 0.001
 VAL_SPLIT = 0.1           # fraction of training data used for validation
 CHECKPOINT_DIR = "./checkpoints"
+PLOTS_DIR = "./plots"       # directory for training plots
 MAX_DISHES = None          # set to an int (e.g. 50) for smoke testing
 NUM_WORKERS = 4
 
@@ -240,16 +245,110 @@ def train_one_epoch(model, loader, optimizer, criterion, device, epoch, total_ep
 
 @torch.no_grad()
 def validate(model, loader, criterion, device):
+    """Returns (avg_loss, per_nutrient_mae, per_nutrient_mae_pct)."""
     model.eval()
     total_loss = 0.0
     n_batches = 0
+    all_preds = []
+    all_labels = []
     for images, labels, _ in loader:
         images, labels = images.to(device), labels.to(device)
         preds = model(images)
         loss = criterion(preds, labels)
         total_loss += loss.item()
         n_batches += 1
-    return total_loss / max(n_batches, 1)
+        all_preds.append(preds.cpu())
+        all_labels.append(labels.cpu())
+    avg_loss = total_loss / max(n_batches, 1)
+    all_preds = torch.cat(all_preds, dim=0)
+    all_labels = torch.cat(all_labels, dim=0)
+    per_mae = (all_preds - all_labels).abs().mean(dim=0)
+    mean_gt = all_labels.mean(dim=0).clamp(min=1e-6)
+    per_mae_pct = 100.0 * per_mae / mean_gt
+    return avg_loss, per_mae, per_mae_pct
+
+
+def save_plots(history, plots_dir):
+    """Generate and save training plots for the final presentation."""
+    os.makedirs(plots_dir, exist_ok=True)
+    epochs = history["epoch"]
+
+    # --- 1. Train & Val Loss (log-log scale) ---
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.loglog(epochs, history["train_loss"], "b-o", markersize=3, label="Train MAE")
+    ax.loglog(epochs, history["val_loss"], "r-o", markersize=3, label="Val MAE")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("MAE (log scale)")
+    ax.set_title("Training & Validation Loss (Log-Log Scale)")
+    ax.legend()
+    ax.grid(True, which="both", ls="--", alpha=0.5)
+    fig.tight_layout()
+    fig.savefig(os.path.join(plots_dir, "loss_loglog.png"), dpi=150)
+    plt.close(fig)
+
+    # --- 2. Train & Val Loss (linear scale) ---
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(epochs, history["train_loss"], "b-o", markersize=3, label="Train MAE")
+    ax.plot(epochs, history["val_loss"], "r-o", markersize=3, label="Val MAE")
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("MAE")
+    ax.set_title("Training & Validation Loss")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(plots_dir, "loss_linear.png"), dpi=150)
+    plt.close(fig)
+
+    # --- 3. Per-nutrient MAE% over epochs ---
+    colors = ["#e74c3c", "#3498db", "#2ecc71", "#f39c12", "#9b59b6"]
+    fig, ax = plt.subplots(figsize=(10, 6))
+    for i, name in enumerate(LABEL_NAMES):
+        key = f"val_mae_pct_{name}"
+        ax.plot(epochs, history[key], "-o", markersize=3, color=colors[i], label=name)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("MAE %")
+    ax.set_title("Validation MAE% Per Nutrient Over Training")
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(plots_dir, "val_mae_pct_per_nutrient.png"), dpi=150)
+    plt.close(fig)
+
+    # --- 4. Per-nutrient absolute MAE over epochs ---
+    fig, axes = plt.subplots(2, 3, figsize=(15, 9))
+    axes = axes.flatten()
+    for i, name in enumerate(LABEL_NAMES):
+        key = f"val_mae_{name}"
+        ax = axes[i]
+        ax.plot(epochs, history[key], "-o", markersize=3, color=colors[i])
+        ax.set_title(f"{name.capitalize()} MAE")
+        ax.set_xlabel("Epoch")
+        ax.set_ylabel("MAE (absolute)")
+        ax.grid(True, alpha=0.3)
+    axes[-1].axis("off")  # hide the 6th subplot
+    fig.suptitle("Per-Nutrient Absolute MAE Over Training", fontsize=14)
+    fig.tight_layout()
+    fig.savefig(os.path.join(plots_dir, "val_mae_per_nutrient.png"), dpi=150)
+    plt.close(fig)
+
+    # --- 5. Learning rate schedule ---
+    fig, ax = plt.subplots(figsize=(10, 4))
+    ax.plot(epochs, history["lr"], "g-o", markersize=3)
+    ax.set_xlabel("Epoch")
+    ax.set_ylabel("Learning Rate")
+    ax.set_title("Learning Rate Schedule")
+    ax.grid(True, alpha=0.3)
+    fig.tight_layout()
+    fig.savefig(os.path.join(plots_dir, "learning_rate.png"), dpi=150)
+    plt.close(fig)
+
+    # --- Save raw history as JSON for later use ---
+    json_path = os.path.join(plots_dir, "training_history.json")
+    with open(json_path, "w") as f:
+        json.dump(history, f, indent=2)
+
+    print(f"  Plots saved to {plots_dir}/")
+    print(f"  Training history saved to {json_path}")
 
 
 def main():
@@ -356,17 +455,42 @@ def main():
     print("=== Training ===")
     best_val_loss = float("inf")
 
+    # History tracking for plots
+    history = {
+        "epoch": [],
+        "train_loss": [],
+        "val_loss": [],
+        "lr": [],
+    }
+    for name in LABEL_NAMES:
+        history[f"val_mae_{name}"] = []
+        history[f"val_mae_pct_{name}"] = []
+
     for epoch in range(1, EPOCHS + 1):
         t0 = time.time()
         train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device, epoch, EPOCHS)
-        val_loss = validate(model, val_loader, criterion, device)
+        val_loss, val_mae, val_mae_pct = validate(model, val_loader, criterion, device)
         scheduler.step()
         elapsed = time.time() - t0
 
         lr = optimizer.param_groups[0]["lr"]
+
+        # Record history
+        history["epoch"].append(epoch)
+        history["train_loss"].append(train_loss)
+        history["val_loss"].append(val_loss)
+        history["lr"].append(lr)
+        for i, name in enumerate(LABEL_NAMES):
+            history[f"val_mae_{name}"].append(val_mae[i].item())
+            history[f"val_mae_pct_{name}"].append(val_mae_pct[i].item())
+
         print(f"  Epoch {epoch:3d}/{EPOCHS} | "
               f"Train MAE: {train_loss:8.2f} | Val MAE: {val_loss:8.2f} | "
               f"LR: {lr:.6f} | Time: {elapsed:.1f}s")
+        print(f"           "
+              f"Val per-nutrient MAE%:  "
+              + "  ".join(f"{name}: {val_mae_pct[i]:.1f}%"
+                         for i, name in enumerate(LABEL_NAMES)))
 
         # Save best model
         if val_loss < best_val_loss:
@@ -381,6 +505,10 @@ def main():
             }, ckpt_path)
             print(f"           > Saved best model (val MAE: {val_loss:.2f})")
 
+        # Update plots every 5 epochs (and on the last epoch)
+        if epoch % 5 == 0 or epoch == EPOCHS:
+            save_plots(history, PLOTS_DIR)
+
     # Save final model
     final_path = os.path.join(CHECKPOINT_DIR, "final_model.pth")
     torch.save({
@@ -391,11 +519,15 @@ def main():
         "train_loss": train_loss,
     }, final_path)
 
+    # Final plots
+    save_plots(history, PLOTS_DIR)
+
     print()
     print("=== Training Complete ===")
     print(f"  Best val MAE: {best_val_loss:.2f}")
     print(f"  Best model:   {os.path.join(CHECKPOINT_DIR, 'best_model.pth')}")
     print(f"  Final model:  {final_path}")
+    print(f"  Plots:        {PLOTS_DIR}/")
 
 
 if __name__ == "__main__":
