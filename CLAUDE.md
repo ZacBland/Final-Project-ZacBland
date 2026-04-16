@@ -34,7 +34,7 @@ This is a Deep Learning final project for predicting nutritional content (calori
 - Train split: 4,058 dishes, Test split: 708 dishes
 - Metadata CSV has no header. Format: `dish_id,cal,mass,fat,carb,protein,[ingr_id,ingr_name,ingr_grams,ingr_cal,ingr_fat,ingr_carb,ingr_protein]*N`
 - Side-angle videos are `.h264` format, need ffmpeg to extract frames
-- Side-angle frames are typically upside down — use `RandomVerticalFlip(p=0.8)` during training
+- Side-angle frames are flipped vertically at download time (no longer upside down)
 
 ## Framework Versions
 
@@ -60,7 +60,8 @@ This is a Deep Learning final project for predicting nutritional content (calori
 
 ## Code Style
 
+- Always use `python3` (not `python`) when running scripts
 - Scripts use descriptive global variables at the top for configuration
-- No argparse — all settings are edited directly in the file
+- No argparse — all settings are edited directly in the file (except predict.py and download script which use argparse)
 - Matplotlib uses Agg backend for headless server rendering
 - Print progress inline with `\r` for batch-level updates during training
