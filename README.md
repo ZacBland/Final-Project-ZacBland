@@ -50,11 +50,17 @@ cd Final-Project-ZacBland
 ### 2. Install Python dependencies
 
 ```bash
+pip install -r requirements.txt --extra-index-url https://download.pytorch.org/whl/cu121
+```
+
+Or install manually:
+
+```bash
 pip install torch==2.3.1+cu121 torchvision==0.18.1+cu121 --index-url https://download.pytorch.org/whl/cu121
 pip install Pillow matplotlib
 ```
 
-Or if not using GPU:
+If not using GPU (CPU only):
 
 ```bash
 pip install torch==2.3.1 torchvision==0.18.1
@@ -150,6 +156,14 @@ Settings are configured via global variables at the top of `test.py`:
 # Edit test.py: set OUTPUT_CSV = "predictions.csv"
 python test.py
 python ../scripts/compute_statistics.py ../data/metadata/dish_metadata_cafe1.csv predictions.csv results.json
+```
+
+### Step 4: Predict on a single image
+
+```bash
+cd Code
+python predict.py path/to/image.png
+python predict.py path/to/image.png --checkpoint ../checkpoints/best_model.pth
 ```
 
 ## Utility Scripts
