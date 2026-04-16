@@ -5,22 +5,18 @@ Download and resize Nutrition5k images from Google Cloud Storage.
 Downloads images selectively (no tar.gz) and resizes them immediately to save
 disk space. Supports resuming interrupted downloads.
 
-Optionally downloads side-angle videos, extracts frames with ffmpeg, resizes
-them, and deletes the original video to conserve disk space.
+Also downloads side-angle videos, extracts frames with ffmpeg, resizes and
+flips them, and deletes the original video to conserve disk space.
 
 Prerequisites:
     - gcloud CLI installed (https://cloud.google.com/sdk/docs/install)
     - pip install Pillow
-    - ffmpeg installed (only needed with --include_side_angles)
+    - ffmpeg installed (for side-angle video frame extraction)
 
-Usage:
-    python download_nutrition5k.py --output_dir ./data --resolution 224
-    python download_nutrition5k.py --output_dir ./data --resolution 224 --max_dishes 5
-    python download_nutrition5k.py --output_dir ./data --resolution 224 --include_side_angles
-    python download_nutrition5k.py --output_dir ./data --resolution 224 --include_side_angles --frame_interval 10
+Configure all settings via the global variables below, then run:
+    python3 scripts/download_nutrition5k.py
 """
 
-import argparse
 import concurrent.futures
 import csv
 import glob
@@ -29,13 +25,26 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 from PIL import Image
 
-GCS_BUCKET = "gs://nutrition5k_dataset/nutrition5k_dataset"
+# =====================================================================
+# CONFIGURATION — edit these variables to control downloading
+# =====================================================================
 
-SIDE_ANGLE_CAMERAS = ["camera_A", "camera_B", "camera_C", "camera_D"]
+OUTPUT_DIR = "./data"
+RESOLUTION = 320              # target image size NxN in pixels
+MAX_DISHES = None             # set to an int (e.g. 10) for testing
+INCLUDE_SIDE_ANGLES = True    # download side-angle videos and extract frames
+FRAME_INTERVAL = 10           # extract every Nth frame from videos
+CAMERAS = ["camera_B", "camera_C"]
+WORKERS = 8                   # number of parallel download threads
+
+# =====================================================================
+
+GCS_BUCKET = "gs://nutrition5k_dataset/nutrition5k_dataset"
 
 METADATA_FILES = [
     "metadata/dish_metadata_cafe1.csv",
@@ -123,11 +132,19 @@ def get_overhead_dish_ids() -> list[str]:
     entries = gcloud_ls(f"{GCS_BUCKET}/imagery/realsense_overhead/")
     dish_ids = []
     for entry in entries:
-        # Entries look like: gs://.../realsense_overhead/dish_XXXXXXXXXX/
         name = entry.rstrip("/").split("/")[-1]
         if name.startswith("dish_"):
             dish_ids.append(name)
     return sorted(dish_ids)
+
+
+def format_eta(elapsed, completed, total):
+    """Format an ETA string from elapsed time and progress."""
+    rate = completed / elapsed if elapsed > 0 else 0
+    eta_s = (total - completed) / rate if rate > 0 else 0
+    eta_m, eta_sec = divmod(int(eta_s), 60)
+    eta_h, eta_m = divmod(eta_m, 60)
+    return f"{eta_h}h{eta_m:02d}m{eta_sec:02d}s" if eta_h else f"{eta_m}m{eta_sec:02d}s"
 
 
 def download_and_resize_image(
@@ -145,7 +162,6 @@ def download_and_resize_image(
     final_path.parent.mkdir(parents=True, exist_ok=True)
     gcs_path = f"{GCS_BUCKET}/imagery/realsense_overhead/{dish_id}/rgb.png"
 
-    # Download to a temp file, resize, then save to final location
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         tmp_path = tmp.name
 
@@ -153,7 +169,6 @@ def download_and_resize_image(
         if not gcloud_cp(gcs_path, tmp_path):
             return "fail"
 
-        # Resize and save
         with Image.open(tmp_path) as img:
             img_resized = img.resize((resolution, resolution), Image.LANCZOS)
             img_resized.save(final_path, "PNG")
@@ -178,7 +193,7 @@ def extract_and_resize_frames(
 ) -> dict[str, int]:
     """
     Download side-angle videos for a dish, extract every Nth frame,
-    resize to target resolution, and delete the original video.
+    resize to target resolution, flip vertically, and delete the original video.
 
     Returns dict with counts: {'ok': N, 'skip': N, 'fail': N}
     """
@@ -186,14 +201,12 @@ def extract_and_resize_frames(
 
     for camera in cameras:
         frames_dir = output_dir / "imagery" / "side_angles" / dish_id / camera
-        # Check if frames already exist (resume support)
         if frames_dir.exists() and any(frames_dir.iterdir()):
             counts["skip"] += 1
             continue
 
         gcs_path = f"{GCS_BUCKET}/imagery/side_angles/{dish_id}/{camera}.h264"
 
-        # Download video to a temp directory
         tmp_dir = tempfile.mkdtemp()
         tmp_video = os.path.join(tmp_dir, f"{camera}.h264")
         tmp_frames_dir = os.path.join(tmp_dir, "frames")
@@ -204,7 +217,6 @@ def extract_and_resize_frames(
                 counts["fail"] += 1
                 continue
 
-            # Extract every Nth frame using ffmpeg
             ffmpeg_cmd = [
                 "ffmpeg", "-y", "-i", tmp_video,
                 "-vf", f"select=not(mod(n\\,{frame_interval}))",
@@ -220,10 +232,8 @@ def extract_and_resize_frames(
                 counts["fail"] += 1
                 continue
 
-            # Delete the video immediately to free space
             os.unlink(tmp_video)
 
-            # Resize each extracted frame and move to final location
             frames_dir.mkdir(parents=True, exist_ok=True)
             frame_files = sorted(glob.glob(os.path.join(tmp_frames_dir, "*.png")))
 
@@ -253,65 +263,13 @@ def extract_and_resize_frames(
 
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Download and resize Nutrition5k images."
-    )
-    parser.add_argument(
-        "--output_dir",
-        type=str,
-        default="./data",
-        help="Directory to save downloaded data (default: ./data)",
-    )
-    parser.add_argument(
-        "--resolution",
-        type=int,
-        default=224,
-        help="Target image size NxN in pixels (default: 224)",
-    )
-    parser.add_argument(
-        "--max_dishes",
-        type=int,
-        default=None,
-        help="Limit number of dishes to download (for testing)",
-    )
-    parser.add_argument(
-        "--no_skip_existing",
-        action="store_true",
-        help="Re-download and overwrite existing images",
-    )
-    parser.add_argument(
-        "--include_side_angles",
-        action="store_true",
-        help="Also download side-angle videos, extract frames, and resize them",
-    )
-    parser.add_argument(
-        "--frame_interval",
-        type=int,
-        default=5,
-        help="Extract every Nth frame from side-angle videos (default: 5, matching the paper)",
-    )
-    parser.add_argument(
-        "--cameras",
-        nargs="+",
-        default=SIDE_ANGLE_CAMERAS,
-        choices=SIDE_ANGLE_CAMERAS,
-        help="Which cameras to extract frames from (default: all four A-D)",
-    )
-    parser.add_argument(
-        "--workers",
-        type=int,
-        default=8,
-        help="Number of parallel download threads (default: 8)",
-    )
-    args = parser.parse_args()
-
-    output_dir = Path(args.output_dir)
+    output_dir = Path(OUTPUT_DIR)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Output directory: {output_dir.resolve()}")
-    print(f"Target resolution: {args.resolution}x{args.resolution}")
-    if args.include_side_angles:
-        print(f"Side angles:      enabled (every {args.frame_interval}th frame, cameras: {args.cameras})")
+    print(f"Target resolution: {RESOLUTION}x{RESOLUTION}")
+    if INCLUDE_SIDE_ANGLES:
+        print(f"Side angles:      enabled (every {FRAME_INTERVAL}th frame, cameras: {CAMERAS})")
     print()
 
     # Step 1: Download metadata
@@ -325,70 +283,71 @@ def main():
         sys.exit(1)
     print(f"  Found {len(overhead_dish_ids)} dishes with overhead images")
 
-    # Also get all dish IDs from metadata for side angles
     all_dish_ids = get_dish_ids_from_metadata(output_dir)
     print(f"  Found {len(all_dish_ids)} total dishes in metadata")
 
-    if args.max_dishes:
-        overhead_dish_ids = overhead_dish_ids[: args.max_dishes]
-        all_dish_ids = all_dish_ids[: args.max_dishes]
-        print(f"  Limited to first {args.max_dishes} dishes")
+    if MAX_DISHES:
+        overhead_dish_ids = overhead_dish_ids[:MAX_DISHES]
+        all_dish_ids = all_dish_ids[:MAX_DISHES]
+        print(f"  Limited to first {MAX_DISHES} dishes")
     print()
 
     # Step 3: Download and resize overhead images
-    print(f"=== Downloading and resizing overhead RGB images ({args.workers} threads) ===")
+    print(f"=== Downloading and resizing overhead RGB images ({WORKERS} threads) ===")
     counts = {"ok": 0, "skip": 0, "fail": 0}
     total = len(overhead_dish_ids)
+    t_start = time.time()
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as executor:
         future_to_dish = {
-            executor.submit(download_and_resize_image, dish_id, output_dir, args.resolution): dish_id
+            executor.submit(download_and_resize_image, dish_id, output_dir, RESOLUTION): dish_id
             for dish_id in overhead_dish_ids
         }
         for i, future in enumerate(concurrent.futures.as_completed(future_to_dish), 1):
-            dish_id = future_to_dish[future]
             status = future.result()
 
-            if status == "skip" and not args.no_skip_existing:
+            if status == "skip":
                 counts["skip"] += 1
-                if i % 100 == 0 or i == total:
-                    print(f"  [{i}/{total}] Progress update - {counts['skip']} skipped so far")
             elif status == "ok":
                 counts["ok"] += 1
-                print(f"  [{i}/{total}] {dish_id} - resized to {args.resolution}x{args.resolution}")
             else:
                 counts["fail"] += 1
 
-    # Step 4: Side-angle video frames (optional)
+            eta_str = format_eta(time.time() - t_start, i, total)
+            print(f"\r  [{i}/{total}] ok:{counts['ok']} skip:{counts['skip']} fail:{counts['fail']} | ETA: {eta_str}   ", end="", flush=True)
+
+    print()  # newline after overhead completes
+
+    # Step 4: Side-angle video frames
     side_counts = {"ok": 0, "skip": 0, "fail": 0}
-    if args.include_side_angles:
+    if INCLUDE_SIDE_ANGLES:
         side_dish_ids = all_dish_ids
-        if args.max_dishes:
-            side_dish_ids = side_dish_ids[: args.max_dishes]
+        if MAX_DISHES:
+            side_dish_ids = side_dish_ids[:MAX_DISHES]
         side_total = len(side_dish_ids)
 
         print()
-        print(f"=== Downloading side-angle videos & extracting frames (every {args.frame_interval}th, {args.workers} threads) ===")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as executor:
+        print(f"=== Downloading side-angle videos & extracting frames (every {FRAME_INTERVAL}th, {WORKERS} threads) ===")
+        t_side_start = time.time()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=WORKERS) as executor:
             future_to_dish = {
                 executor.submit(
                     extract_and_resize_frames,
-                    dish_id, output_dir, args.resolution,
-                    args.frame_interval, args.cameras,
+                    dish_id, output_dir, RESOLUTION,
+                    FRAME_INTERVAL, CAMERAS,
                 ): dish_id
                 for dish_id in side_dish_ids
             }
             for i, future in enumerate(concurrent.futures.as_completed(future_to_dish), 1):
-                dish_id = future_to_dish[future]
                 result = future.result()
                 side_counts["ok"] += result["ok"]
                 side_counts["skip"] += result["skip"]
                 side_counts["fail"] += result["fail"]
 
-                if result["ok"] > 0:
-                    print(f"  [{i}/{side_total}] {dish_id} - extracted frames from {result['ok']} camera(s)")
-                elif i % 100 == 0 or i == side_total:
-                    print(f"  [{i}/{side_total}] Progress update")
+                eta_str = format_eta(time.time() - t_side_start, i, side_total)
+                print(f"\r  [{i}/{side_total}] ok:{side_counts['ok']} skip:{side_counts['skip']} fail:{side_counts['fail']} | ETA: {eta_str}   ", end="", flush=True)
+
+        print()  # newline after side-angles complete
 
     # Summary
     print()
@@ -398,13 +357,13 @@ def main():
     print(f"  Failed:               {counts['fail']}")
     print(f"  Total dishes:         {total}")
 
-    if args.include_side_angles:
+    if INCLUDE_SIDE_ANGLES:
         print()
         print("=== Summary: Side-Angle Frames ===")
         print(f"  Cameras processed:  {side_counts['ok']}")
         print(f"  Cameras skipped:    {side_counts['skip']}")
         print(f"  Cameras failed:     {side_counts['fail']}")
-        total_cameras = len(side_dish_ids) * len(args.cameras)
+        total_cameras = len(side_dish_ids) * len(CAMERAS)
         print(f"  Total camera/dish:  {total_cameras}")
 
 
