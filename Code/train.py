@@ -31,23 +31,20 @@ from PIL import Image
 # =====================================================================
 
 DATA_DIR = "./data"
-EPOCHS = 50
-BATCH_SIZE = 32
+EPOCHS = 100
+BATCH_SIZE = 64
 LEARNING_RATE = 0.001
 VAL_SPLIT = 0.1           # fraction of training data used for validation
 CHECKPOINT_DIR = "./checkpoints"
 PLOTS_DIR = "./plots"       # directory for training plots
 MAX_DISHES = None          # set to an int (e.g. 50) for smoke testing
-NUM_WORKERS = 4
+NUM_WORKERS = 8
 
 # Image sources to include: "overhead", "side_angles", or both
 IMAGE_SOURCES = ["overhead", "side_angles"]  # e.g. ["overhead", "side_angles"]
 
 # Side-angle cameras to use (only relevant if "side_angles" in IMAGE_SOURCES)
-SIDE_CAMERAS = ["camera_A", "camera_B"]
-
-# Side-angle images are typically upside down — flip most of the time
-SIDE_ANGLE_VFLIP_PROB = 0.8
+SIDE_CAMERAS = ["camera_B", "camera_C"]
 
 # Freeze backbone for the first N epochs (train only FC heads to stabilize)
 FREEZE_BACKBONE_EPOCHS = 5
@@ -487,7 +484,6 @@ def main():
         f.write(f"Val split:           {VAL_SPLIT}\n")
         f.write(f"Image sources:       {IMAGE_SOURCES}\n")
         f.write(f"Side cameras:        {SIDE_CAMERAS}\n")
-        f.write(f"Side vflip prob:     {SIDE_ANGLE_VFLIP_PROB}\n")
         f.write(f"Freeze backbone:     {FREEZE_BACKBONE_EPOCHS} epochs\n")
         f.write(f"Train samples:       {n_train}\n")
         f.write(f"Val samples:         {n_val}\n")
