@@ -49,6 +49,9 @@ SIDE_CAMERAS = ["camera_A", "camera_B"]
 # Side-angle images are typically upside down — flip most of the time
 SIDE_ANGLE_VFLIP_PROB = 0.8
 
+# Freeze backbone for the first N epochs (train only FC heads to stabilize)
+FREEZE_BACKBONE_EPOCHS = 5
+
 # =====================================================================
 
 METADATA_CSVS = [
@@ -369,12 +372,10 @@ def main():
                              std=[0.229, 0.224, 0.225]),
     ])
 
-    # Side-angle training transform: adds a high-probability vertical flip
-    # because side-angle frames are typically captured upside down
+    # Side-angle training transform (images are pre-flipped at download time)
     side_angle_train_transform = transforms.Compose([
         transforms.Resize(320),
         transforms.CenterCrop(299),
-        transforms.RandomVerticalFlip(p=SIDE_ANGLE_VFLIP_PROB),
         transforms.RandomHorizontalFlip(),
         transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2),
         transforms.ToTensor(),
@@ -390,11 +391,10 @@ def main():
                              std=[0.229, 0.224, 0.225]),
     ])
 
-    # Side-angle val transform: deterministic vertical flip (always flip)
+    # Side-angle val transform (images are pre-flipped at download time)
     side_angle_val_transform = transforms.Compose([
         transforms.Resize(320),
         transforms.CenterCrop(299),
-        transforms.RandomVerticalFlip(p=SIDE_ANGLE_VFLIP_PROB),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                              std=[0.229, 0.224, 0.225]),
@@ -444,14 +444,23 @@ def main():
     print("=== Building model ===")
     model = NutritionModel().to(device)
     total_params = sum(p.numel() for p in model.parameters())
-    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"  Parameters: {total_params:,} ({trainable_params:,} trainable)")
+
+    # Freeze backbone for the first N epochs
+    if FREEZE_BACKBONE_EPOCHS > 0:
+        for param in model.backbone.parameters():
+            param.requires_grad = False
+        trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"  Parameters: {total_params:,} ({trainable_params:,} trainable, backbone frozen for {FREEZE_BACKBONE_EPOCHS} epochs)")
+    else:
+        trainable_params = total_params
+        print(f"  Parameters: {total_params:,} ({trainable_params:,} trainable)")
     print()
 
     # --- Optimizer, loss, scheduler ---
-    optimizer = torch.optim.RMSprop(model.parameters(), lr=LEARNING_RATE)
+    # Only pass trainable params to optimizer initially
+    optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, model.parameters()), lr=LEARNING_RATE)
     criterion = nn.L1Loss()
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
 
     # --- Save model summary ---
     summary_path = os.path.join(CHECKPOINT_DIR, "model_summary.txt")
@@ -464,13 +473,14 @@ def main():
         f.write(f"Outputs:             {', '.join(LABEL_NAMES)}\n")
         f.write(f"Loss function:       L1 (MAE)\n")
         f.write(f"Optimizer:           RMSProp (lr={LEARNING_RATE})\n")
-        f.write(f"LR scheduler:        StepLR (step=10, gamma=0.5)\n")
+        f.write(f"LR scheduler:        CosineAnnealingLR (T_max={EPOCHS})\n")
         f.write(f"Batch size:          {BATCH_SIZE}\n")
         f.write(f"Epochs:              {EPOCHS}\n")
         f.write(f"Val split:           {VAL_SPLIT}\n")
         f.write(f"Image sources:       {IMAGE_SOURCES}\n")
         f.write(f"Side cameras:        {SIDE_CAMERAS}\n")
         f.write(f"Side vflip prob:     {SIDE_ANGLE_VFLIP_PROB}\n")
+        f.write(f"Freeze backbone:     {FREEZE_BACKBONE_EPOCHS} epochs\n")
         f.write(f"Train samples:       {n_train}\n")
         f.write(f"Val samples:         {n_val}\n")
         f.write(f"Total parameters:    {total_params:,}\n")
@@ -501,6 +511,15 @@ def main():
         history[f"val_mae_pct_{name}"] = []
 
     for epoch in range(1, EPOCHS + 1):
+        # Unfreeze backbone after FREEZE_BACKBONE_EPOCHS
+        if epoch == FREEZE_BACKBONE_EPOCHS + 1 and FREEZE_BACKBONE_EPOCHS > 0:
+            print(f"  >>> Unfreezing backbone at epoch {epoch}")
+            for param in model.backbone.parameters():
+                param.requires_grad = True
+            # Rebuild optimizer with all parameters and a lower LR for backbone
+            optimizer = torch.optim.RMSprop(model.parameters(), lr=LEARNING_RATE * 0.1)
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS - FREEZE_BACKBONE_EPOCHS)
+
         t0 = time.time()
         train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device, epoch, EPOCHS)
         val_loss, val_mae, val_mae_pct = validate(model, val_loader, criterion, device)

@@ -231,7 +231,9 @@ def extract_and_resize_frames(
                 frame_name = os.path.basename(frame_path)
                 final_frame = frames_dir / frame_name
                 with Image.open(frame_path) as img:
-                    img_resized = img.resize(
+                    # Side-angle frames are captured upside down — flip vertically
+                    img_flipped = img.transpose(Image.FLIP_TOP_BOTTOM)
+                    img_resized = img_flipped.resize(
                         (resolution, resolution), Image.LANCZOS
                     )
                     img_resized.save(final_frame, "PNG")
