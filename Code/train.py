@@ -217,11 +217,11 @@ class NutritionModel(nn.Module):
 # Training
 # ---------------------------------------------------------------------------
 
-def train_one_epoch(model, loader, optimizer, criterion, device):
+def train_one_epoch(model, loader, optimizer, criterion, device, epoch, total_epochs):
     model.train()
     total_loss = 0.0
-    n_batches = 0
-    for images, labels, _ in loader:
+    n_batches = len(loader)
+    for i, (images, labels, _) in enumerate(loader, 1):
         images, labels = images.to(device), labels.to(device)
         optimizer.zero_grad()
         preds = model(images)
@@ -229,7 +229,12 @@ def train_one_epoch(model, loader, optimizer, criterion, device):
         loss.backward()
         optimizer.step()
         total_loss += loss.item()
-        n_batches += 1
+        pct = 100 * i / n_batches
+        avg_loss = total_loss / i
+        print(f"\r  Epoch {epoch:3d}/{total_epochs} | "
+              f"Batch {i}/{n_batches} ({pct:5.1f}%) | "
+              f"Running MAE: {avg_loss:.2f}", end="", flush=True)
+    print()  # newline after epoch finishes
     return total_loss / max(n_batches, 1)
 
 
@@ -353,7 +358,7 @@ def main():
 
     for epoch in range(1, EPOCHS + 1):
         t0 = time.time()
-        train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device)
+        train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device, epoch, EPOCHS)
         val_loss = validate(model, val_loader, criterion, device)
         scheduler.step()
         elapsed = time.time() - t0
