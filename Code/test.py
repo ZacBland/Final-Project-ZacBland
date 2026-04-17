@@ -50,7 +50,7 @@ def run_inference(model, loader, device):
 
     for images, labels, dish_ids in loader:
         images = images.to(device)
-        preds = model(images)
+        preds, _ = model(images)
         all_dish_ids.extend(dish_ids)
         all_preds.append(preds.cpu())
         all_labels.append(labels)

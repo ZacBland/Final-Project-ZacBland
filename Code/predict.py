@@ -47,7 +47,8 @@ def predict(image_path, checkpoint_path):
 
     # Predict
     with torch.no_grad():
-        preds = model(input_tensor).squeeze(0)  # (5,)
+        preds, _ = model(input_tensor)
+        preds = preds.squeeze(0)  # (5,)
 
     # Display results
     print(f"\n{'=' * 40}")

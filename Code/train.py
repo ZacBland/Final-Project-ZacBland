@@ -42,6 +42,8 @@ MAX_DISHES = None          # set to an int (e.g. 50) for smoke testing
 NUM_WORKERS = 4
 WEIGHT_DECAY = 1e-4           # L2 regularization for optimizer
 EARLY_STOP_PATIENCE = 15      # stop if val MAE doesn't improve for N epochs
+NUM_EXPERTS = 4               # number of expert networks in MoE
+BALANCE_LOSS_WEIGHT = 0.01    # weight for expert load-balancing loss
 
 # Image sources to include: "overhead", "side_angles", or both
 IMAGE_SOURCES = ["overhead", "side_angles"]  # e.g. ["overhead", "side_angles"]
@@ -188,53 +190,78 @@ class Nutrition5kDataset(Dataset):
 
 class NutritionModel(nn.Module):
     """
-    InceptionV3 backbone with multi-task regression head.
+    InceptionV3 backbone with Mixture-of-Experts (MoE) multi-task regression.
 
-    Matches the paper's architecture:
-      backbone features → shared 2x FC(4096) → per-task FC(4096) → FC(1) x 5
+    Architecture:
+      backbone (2048) → gating network (softmax over N experts)
+                      → N expert networks (each 2048→2048→2048)
+                      → weighted sum of expert outputs
+                        → per-task heads (2048→1024→1) x 5
+
+    forward() returns (predictions, balance_loss) where balance_loss
+    encourages uniform expert utilization.
     """
 
-    def __init__(self, num_tasks=5, dropout=0.6):
+    def __init__(self, num_tasks=5, num_experts=NUM_EXPERTS, dropout=0.6):
         super().__init__()
+        self.num_experts = num_experts
 
         # InceptionV3 backbone (pretrained on ImageNet)
-        # Pretrained weights require aux_logits=True; we disable after loading
         self.backbone = models.inception_v3(
             weights=models.Inception_V3_Weights.IMAGENET1K_V1,
             aux_logits=True,
         )
         self.backbone.aux_logits = False
         self.backbone.AuxLogits = None
-        # Replace the classification head with identity to get 2048-dim features
         self.backbone.fc = nn.Identity()
 
-        # Shared FC layers (paper: 2x 4096-dim)
-        self.shared = nn.Sequential(
+        # Gating network: learns to route inputs to experts
+        self.gate = nn.Sequential(
             nn.Flatten(),
-            nn.Linear(2048, 4096),
-            nn.ReLU(inplace=True),
-            nn.Dropout(dropout),
-            nn.Linear(4096, 4096),
-            nn.ReLU(inplace=True),
-            nn.Dropout(dropout),
+            nn.Linear(2048, num_experts),
+            nn.Softmax(dim=1),
         )
 
-        # Per-task heads (paper: FC(4096) → FC(1) per task)
-        self.task_heads = nn.ModuleList([
+        # Expert networks: each specializes on different food patterns
+        self.experts = nn.ModuleList([
             nn.Sequential(
-                nn.Linear(4096, 4096),
+                nn.Flatten(),
+                nn.Linear(2048, 2048),
                 nn.ReLU(inplace=True),
                 nn.Dropout(dropout),
-                nn.Linear(4096, 1),
+                nn.Linear(2048, 2048),
+                nn.ReLU(inplace=True),
+                nn.Dropout(dropout),
+            )
+            for _ in range(num_experts)
+        ])
+
+        # Per-task heads
+        self.task_heads = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(2048, 1024),
+                nn.ReLU(inplace=True),
+                nn.Dropout(dropout),
+                nn.Linear(1024, 1),
             )
             for _ in range(num_tasks)
         ])
 
     def forward(self, x):
-        features = self.backbone(x)
-        shared_out = self.shared(features)
-        outputs = [head(shared_out) for head in self.task_heads]
-        return torch.cat(outputs, dim=1)  # (batch, num_tasks)
+        features = self.backbone(x)                         # (B, 2048)
+        gate_weights = self.gate(features)                  # (B, num_experts)
+        expert_outs = torch.stack(
+            [e(features) for e in self.experts], dim=1      # (B, num_experts, 2048)
+        )
+        # Weighted combination of expert outputs
+        combined = (gate_weights.unsqueeze(-1) * expert_outs).sum(dim=1)  # (B, 2048)
+        # Per-task predictions
+        outputs = [head(combined) for head in self.task_heads]
+        preds = torch.cat(outputs, dim=1)                   # (B, num_tasks)
+        # Load-balancing loss: penalize uneven expert usage
+        importance = gate_weights.mean(dim=0)               # (num_experts,)
+        balance_loss = self.num_experts * (importance ** 2).sum()
+        return preds, balance_loss
 
 
 # ---------------------------------------------------------------------------
@@ -255,8 +282,8 @@ def train_one_epoch(model, loader, optimizer, criterion, device, epoch, total_ep
         else:
             norm_labels = labels
         optimizer.zero_grad()
-        preds = model(images)
-        loss = criterion(preds, norm_labels)
+        preds, balance_loss = model(images)
+        loss = criterion(preds, norm_labels) + BALANCE_LOSS_WEIGHT * balance_loss
         loss.backward()
         optimizer.step()
         total_norm_loss += loss.item()
@@ -295,7 +322,7 @@ def validate(model, loader, criterion, device, label_mean=None):
             norm_labels = labels / lm
         else:
             norm_labels = labels
-        preds = model(images)
+        preds, _ = model(images)
         loss = criterion(preds, norm_labels)
         total_loss += loss.item()
         n_batches += 1
