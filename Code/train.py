@@ -191,11 +191,19 @@ class Nutrition5kDataset(Dataset):
 
 class NutritionModel(nn.Module):
     """
-    InceptionV3 backbone with multi-task regression head.
+    InceptionV3 backbone with mass-conditioned multi-task regression head.
 
-    Matches the paper's architecture:
-      backbone features → shared 2x FC(4096) → per-task FC(4096) → FC(1) x 5
+    Architecture:
+      backbone features → shared 2x FC(4096) → mass head → mass_pred
+                                              → 4 conditioned heads (receive shared features + mass_pred)
+
+    Mass is predicted first, then the other nutrients (calories, fat, carbs, protein)
+    are predicted conditioned on the mass, since mass drives all other nutritional values.
     """
+
+    # LABEL_NAMES order: ["calories", "mass", "fat", "carbs", "protein"]
+    MASS_IDX = 1  # index of mass in the output tensor
+    OTHER_IDXS = [0, 2, 3, 4]  # indices of calories, fat, carbs, protein
 
     def __init__(self, num_tasks=5, dropout=0.6):
         super().__init__()
@@ -222,22 +230,44 @@ class NutritionModel(nn.Module):
             nn.Dropout(dropout),
         )
 
-        # Per-task heads (paper: FC(4096) → FC(1) per task)
-        self.task_heads = nn.ModuleList([
+        # Mass head: predicted independently from shared features
+        self.mass_head = nn.Sequential(
+            nn.Linear(4096, 4096),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(4096, 1),
+        )
+
+        # Conditioned heads for calories, fat, carbs, protein
+        # Input is 4097 = 4096 shared features + 1 mass prediction
+        self.conditioned_heads = nn.ModuleList([
             nn.Sequential(
-                nn.Linear(4096, 4096),
+                nn.Linear(4097, 4096),
                 nn.ReLU(inplace=True),
                 nn.Dropout(dropout),
                 nn.Linear(4096, 1),
             )
-            for _ in range(num_tasks)
+            for _ in range(num_tasks - 1)  # 4 conditioned outputs
         ])
 
     def forward(self, x):
         features = self.backbone(x)
         shared_out = self.shared(features)
-        outputs = [head(shared_out) for head in self.task_heads]
-        return torch.cat(outputs, dim=1)  # (batch, num_tasks)
+
+        # Predict mass first
+        mass_pred = self.mass_head(shared_out)  # (batch, 1)
+
+        # Condition other nutrients on shared features + predicted mass
+        conditioned_input = torch.cat([shared_out, mass_pred], dim=1)  # (batch, 4097)
+        conditioned_preds = [head(conditioned_input) for head in self.conditioned_heads]
+
+        # Reassemble in original order: [calories, mass, fat, carbs, protein]
+        outputs = [None] * 5
+        outputs[self.MASS_IDX] = mass_pred
+        for i, idx in enumerate(self.OTHER_IDXS):
+            outputs[idx] = conditioned_preds[i]
+
+        return torch.cat(outputs, dim=1)  # (batch, 5)
 
 
 # ---------------------------------------------------------------------------
