@@ -39,7 +39,7 @@ VAL_SPLIT = 0.1           # fraction of training data used for validation
 CHECKPOINT_DIR = "./checkpoints"
 PLOTS_DIR = "./plots"       # directory for training plots
 MAX_DISHES = None          # set to an int (e.g. 50) for smoke testing
-NUM_WORKERS = 8
+NUM_WORKERS = 4
 WEIGHT_DECAY = 1e-5           # L2 regularization for optimizer
 EARLY_STOP_PATIENCE = 15      # stop if val MAE doesn't improve for N epochs
 
