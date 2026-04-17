@@ -33,7 +33,7 @@ from PIL import Image
 
 DATA_DIR = "./data"
 EPOCHS = 100
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 LEARNING_RATE = 0.001
 VAL_SPLIT = 0.1           # fraction of training data used for validation
 CHECKPOINT_DIR = "./checkpoints"
