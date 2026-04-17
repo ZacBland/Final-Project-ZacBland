@@ -40,7 +40,7 @@ CHECKPOINT_DIR = "./checkpoints"
 PLOTS_DIR = "./plots"       # directory for training plots
 MAX_DISHES = None          # set to an int (e.g. 50) for smoke testing
 NUM_WORKERS = 4
-WEIGHT_DECAY = 1e-5           # L2 regularization for optimizer
+WEIGHT_DECAY = 1e-4           # L2 regularization for optimizer
 EARLY_STOP_PATIENCE = 15      # stop if val MAE doesn't improve for N epochs
 
 # Image sources to include: "overhead", "side_angles", or both
@@ -93,7 +93,8 @@ class Nutrition5kDataset(Dataset):
 
     def __init__(self, data_dir, split_file=None, dish_ids=None, transform=None,
                  side_angle_transform=None, max_dishes=None,
-                 image_sources=None, side_cameras=None):
+                 image_sources=None, side_cameras=None,
+                 max_side_frames=None):
         self.data_dir = data_dir
         self.transform = transform
         self.side_angle_transform = side_angle_transform or transform
@@ -147,9 +148,16 @@ class Nutrition5kDataset(Dataset):
                     if not os.path.isdir(frames_dir):
                         continue
                     frame_files = sorted(glob.glob(os.path.join(frames_dir, "*.png")))
-                    for frame_path in frame_files:
-                        self.samples.append((frame_path, labels, dish_id, "side"))
+                    if not frame_files:
+                        continue
+                    if max_side_frames and len(frame_files) > max_side_frames:
+                        # Store all paths; randomly pick in __getitem__ for per-epoch variance
+                        self.samples.append((frame_files, labels, dish_id, "side"))
                         n_side += 1
+                    else:
+                        for frame_path in frame_files:
+                            self.samples.append((frame_path, labels, dish_id, "side"))
+                            n_side += 1
 
         source = split_file if split_file else f"{len(split_ids)} dish IDs"
         print(f"  Loaded {len(self.samples)} samples from {source} "
@@ -161,6 +169,8 @@ class Nutrition5kDataset(Dataset):
 
     def __getitem__(self, idx):
         img_path, labels, dish_id, source_type = self.samples[idx]
+        if isinstance(img_path, list):
+            img_path = random.choice(img_path)
         image = Image.open(img_path).convert("RGB")
 
         if source_type == "side" and self.side_angle_transform:
@@ -231,12 +241,15 @@ class NutritionModel(nn.Module):
 # Training
 # ---------------------------------------------------------------------------
 
-def train_one_epoch(model, loader, optimizer, criterion, device, epoch, total_epochs):
+def train_one_epoch(model, loader, optimizer, criterion, device, epoch, total_epochs, label_mean=None):
     model.train()
     total_loss = 0.0
     n_batches = len(loader)
+    lm = label_mean.to(device) if label_mean is not None else None
     for i, (images, labels, _) in enumerate(loader, 1):
         images, labels = images.to(device), labels.to(device)
+        if lm is not None:
+            labels = labels / lm
         optimizer.zero_grad()
         preds = model(images)
         loss = criterion(preds, labels)
@@ -253,20 +266,33 @@ def train_one_epoch(model, loader, optimizer, criterion, device, epoch, total_ep
 
 
 @torch.no_grad()
-def validate(model, loader, criterion, device):
-    """Returns (avg_loss, per_nutrient_mae, per_nutrient_mae_pct)."""
+def validate(model, loader, criterion, device, label_mean=None):
+    """Returns (avg_loss, per_nutrient_mae, per_nutrient_mae_pct).
+
+    If label_mean is provided, labels are normalized for loss computation
+    and predictions are denormalized for MAE reporting.
+    """
     model.eval()
     total_loss = 0.0
     n_batches = 0
     all_preds = []
     all_labels = []
+    lm = label_mean.to(device) if label_mean is not None else None
     for images, labels, _ in loader:
         images, labels = images.to(device), labels.to(device)
+        if lm is not None:
+            norm_labels = labels / lm
+        else:
+            norm_labels = labels
         preds = model(images)
-        loss = criterion(preds, labels)
+        loss = criterion(preds, norm_labels)
         total_loss += loss.item()
         n_batches += 1
-        all_preds.append(preds.cpu())
+        # Denormalize predictions for metric computation
+        if lm is not None:
+            all_preds.append((preds * lm).cpu())
+        else:
+            all_preds.append(preds.cpu())
         all_labels.append(labels.cpu())
     avg_loss = total_loss / max(n_batches, 1)
     all_preds = torch.cat(all_preds, dim=0)
@@ -439,6 +465,7 @@ def main():
         side_angle_transform=side_angle_train_transform,
         image_sources=IMAGE_SOURCES,
         side_cameras=SIDE_CAMERAS,
+        max_side_frames=1,
     )
     val_dataset = Nutrition5kDataset(
         DATA_DIR, dish_ids=val_dish_ids,
@@ -447,6 +474,12 @@ def main():
         image_sources=IMAGE_SOURCES,
         side_cameras=SIDE_CAMERAS,
     )
+
+    # Compute label normalization from training set
+    all_labels = torch.tensor([s[1] for s in train_dataset.samples], dtype=torch.float32)
+    label_mean = all_labels.mean(dim=0)  # (5,)
+    label_mean = label_mean.clamp(min=1.0)  # avoid division by zero
+    print(f"  Label means (normalization): {', '.join(f'{LABEL_NAMES[i]}: {label_mean[i]:.1f}' for i in range(5))}")
 
     train_loader = DataLoader(
         train_dataset, batch_size=BATCH_SIZE, shuffle=True,
@@ -540,12 +573,12 @@ def main():
             for param in model.backbone.parameters():
                 param.requires_grad = True
             # Rebuild optimizer with all parameters and a lower LR for backbone
-            optimizer = torch.optim.RMSprop(model.parameters(), lr=LEARNING_RATE * 0.1, weight_decay=WEIGHT_DECAY)
+            optimizer = torch.optim.RMSprop(model.parameters(), lr=LEARNING_RATE * 0.01, weight_decay=WEIGHT_DECAY)
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS - FREEZE_BACKBONE_EPOCHS)
 
         t0 = time.time()
-        train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device, epoch, EPOCHS)
-        val_loss, val_mae, val_mae_pct = validate(model, val_loader, criterion, device)
+        train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device, epoch, EPOCHS, label_mean=label_mean)
+        val_loss, val_mae, val_mae_pct = validate(model, val_loader, criterion, device, label_mean=label_mean)
         scheduler.step()
         elapsed = time.time() - t0
 

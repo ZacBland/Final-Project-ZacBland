@@ -19,7 +19,7 @@ from torchvision import transforms
 # Import from train.py
 from train import (
     Nutrition5kDataset, NutritionModel, LABEL_NAMES,
-    SIDE_CAMERAS, SIDE_ANGLE_VFLIP_PROB,
+    SIDE_CAMERAS,
 )
 
 
@@ -83,11 +83,10 @@ def main():
                              std=[0.229, 0.224, 0.225]),
     ])
 
-    # Side-angle test transform: flip with same probability as training
+    # Side-angle test transform (images are pre-flipped at download time)
     side_angle_test_transform = transforms.Compose([
         transforms.Resize(320),
         transforms.CenterCrop(299),
-        transforms.RandomVerticalFlip(p=SIDE_ANGLE_VFLIP_PROB),
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406],
                              std=[0.229, 0.224, 0.225]),
