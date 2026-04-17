@@ -242,27 +242,38 @@ class NutritionModel(nn.Module):
 # ---------------------------------------------------------------------------
 
 def train_one_epoch(model, loader, optimizer, criterion, device, epoch, total_epochs, label_mean=None):
+    """Returns (norm_loss, denorm_mae)."""
     model.train()
-    total_loss = 0.0
+    total_norm_loss = 0.0
+    total_denorm_loss = 0.0
     n_batches = len(loader)
     lm = label_mean.to(device) if label_mean is not None else None
     for i, (images, labels, _) in enumerate(loader, 1):
         images, labels = images.to(device), labels.to(device)
         if lm is not None:
-            labels = labels / lm
+            norm_labels = labels / lm
+        else:
+            norm_labels = labels
         optimizer.zero_grad()
         preds = model(images)
-        loss = criterion(preds, labels)
+        loss = criterion(preds, norm_labels)
         loss.backward()
         optimizer.step()
-        total_loss += loss.item()
+        total_norm_loss += loss.item()
+        # Denormalized MAE for reporting
+        with torch.no_grad():
+            if lm is not None:
+                denorm_mae = (preds * lm - labels).abs().mean().item()
+            else:
+                denorm_mae = loss.item()
+            total_denorm_loss += denorm_mae
         pct = 100 * i / n_batches
-        avg_loss = total_loss / i
         print(f"\r  Epoch {epoch:3d}/{total_epochs} | "
               f"Batch {i}/{n_batches} ({pct:5.1f}%) | "
-              f"Running MAE: {avg_loss:.2f}", end="", flush=True)
+              f"Running MAE: {total_denorm_loss / i:.2f}", end="", flush=True)
     print()  # newline after epoch finishes
-    return total_loss / max(n_batches, 1)
+    n = max(n_batches, 1)
+    return total_norm_loss / n, total_denorm_loss / n
 
 
 @torch.no_grad()
@@ -577,8 +588,8 @@ def main():
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS - FREEZE_BACKBONE_EPOCHS)
 
         t0 = time.time()
-        train_loss = train_one_epoch(model, train_loader, optimizer, criterion, device, epoch, EPOCHS, label_mean=label_mean)
-        val_loss, val_mae, val_mae_pct = validate(model, val_loader, criterion, device, label_mean=label_mean)
+        train_norm_loss, train_mae = train_one_epoch(model, train_loader, optimizer, criterion, device, epoch, EPOCHS, label_mean=label_mean)
+        val_norm_loss, val_mae, val_mae_pct = validate(model, val_loader, criterion, device, label_mean=label_mean)
         scheduler.step()
         elapsed = time.time() - t0
 
@@ -589,20 +600,20 @@ def main():
 
         # Record history
         history["epoch"].append(epoch)
-        history["train_loss"].append(train_loss)
+        history["train_loss"].append(train_mae)
         history["val_loss"].append(val_mae_avg)
         history["lr"].append(lr)
         for i, name in enumerate(LABEL_NAMES):
             history[f"val_mae_{name}"].append(val_mae[i].item())
             history[f"val_mae_pct_{name}"].append(val_mae_pct[i].item())
 
-        print(f"  Epoch {epoch:3d}/{EPOCHS} | "
-              f"Train loss: {train_loss:8.4f} | Val MAE: {val_mae_avg:8.2f} | "
-              f"LR: {lr:.6f} | Time: {elapsed:.1f}s")
-        print(f"           "
-              f"Val per-nutrient MAE%:  "
+        print(f"  ─── Epoch {epoch}/{EPOCHS} ────────────────────────────────────")
+        print(f"    Train  ─  MAE: {train_mae:7.2f}  |  norm loss: {train_norm_loss:.3f}")
+        print(f"    Val    ─  MAE: {val_mae_avg:7.2f}  |  norm loss: {val_norm_loss:.3f}")
+        print(f"    Val MAE%:  "
               + "  ".join(f"{name}: {val_mae_pct[i]:.1f}%"
                          for i, name in enumerate(LABEL_NAMES)))
+        print(f"    LR: {lr:.6f}  |  Time: {elapsed:.1f}s")
 
         # Save best model
         if val_mae_avg < best_val_loss:
@@ -614,9 +625,9 @@ def main():
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
                 "val_loss": val_mae_avg,
-                "train_loss": train_loss,
+                "train_loss": train_mae,
             }, ckpt_path)
-            print(f"           > Saved best model (val MAE: {val_mae_avg:.2f})")
+            print(f"    > Saved best model (val MAE: {val_mae_avg:.2f})")
         else:
             epochs_without_improvement += 1
             if EARLY_STOP_PATIENCE and epochs_without_improvement >= EARLY_STOP_PATIENCE:
