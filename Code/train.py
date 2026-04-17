@@ -43,6 +43,9 @@ NUM_WORKERS = 4
 WEIGHT_DECAY = 1e-4           # L2 regularization for optimizer
 EARLY_STOP_PATIENCE = 15      # stop if val MAE doesn't improve for N epochs
 
+# Per-task loss weights: [calories, mass, fat, carbs, protein]
+TASK_WEIGHTS = [1.0, 3.0, 1.0, 1.0, 1.0]  # prioritize mass prediction
+
 # Image sources to include: "overhead", "side_angles", or both
 IMAGE_SOURCES = ["overhead", "side_angles"]  # e.g. ["overhead", "side_angles"]
 
@@ -241,13 +244,14 @@ class NutritionModel(nn.Module):
 # Training
 # ---------------------------------------------------------------------------
 
-def train_one_epoch(model, loader, optimizer, criterion, device, epoch, total_epochs, label_mean=None):
+def train_one_epoch(model, loader, optimizer, criterion, device, epoch, total_epochs, label_mean=None, task_weights=None):
     """Returns (norm_loss, denorm_mae)."""
     model.train()
     total_norm_loss = 0.0
     total_denorm_loss = 0.0
     n_batches = len(loader)
     lm = label_mean.to(device) if label_mean is not None else None
+    tw = task_weights.to(device) if task_weights is not None else None
     for i, (images, labels, _) in enumerate(loader, 1):
         images, labels = images.to(device), labels.to(device)
         if lm is not None:
@@ -256,7 +260,11 @@ def train_one_epoch(model, loader, optimizer, criterion, device, epoch, total_ep
             norm_labels = labels
         optimizer.zero_grad()
         preds = model(images)
-        loss = criterion(preds, norm_labels)
+        if tw is not None:
+            # Weighted per-task L1 loss
+            loss = ((preds - norm_labels).abs() * tw).mean()
+        else:
+            loss = criterion(preds, norm_labels)
         loss.backward()
         optimizer.step()
         total_norm_loss += loss.item()
@@ -588,7 +596,8 @@ def main():
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS - FREEZE_BACKBONE_EPOCHS)
 
         t0 = time.time()
-        train_norm_loss, train_mae = train_one_epoch(model, train_loader, optimizer, criterion, device, epoch, EPOCHS, label_mean=label_mean)
+        task_weights = torch.tensor(TASK_WEIGHTS, dtype=torch.float32)
+        train_norm_loss, train_mae = train_one_epoch(model, train_loader, optimizer, criterion, device, epoch, EPOCHS, label_mean=label_mean, task_weights=task_weights)
         val_norm_loss, val_mae, val_mae_pct = validate(model, val_loader, criterion, device, label_mean=label_mean)
         scheduler.step()
         elapsed = time.time() - t0
