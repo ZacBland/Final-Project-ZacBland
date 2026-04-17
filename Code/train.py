@@ -584,17 +584,20 @@ def main():
 
         lr = optimizer.param_groups[0]["lr"]
 
+        # Use denormalized val MAE for display and best-model tracking
+        val_mae_avg = val_mae.mean().item()
+
         # Record history
         history["epoch"].append(epoch)
         history["train_loss"].append(train_loss)
-        history["val_loss"].append(val_loss)
+        history["val_loss"].append(val_mae_avg)
         history["lr"].append(lr)
         for i, name in enumerate(LABEL_NAMES):
             history[f"val_mae_{name}"].append(val_mae[i].item())
             history[f"val_mae_pct_{name}"].append(val_mae_pct[i].item())
 
         print(f"  Epoch {epoch:3d}/{EPOCHS} | "
-              f"Train MAE: {train_loss:8.2f} | Val MAE: {val_loss:8.2f} | "
+              f"Train loss: {train_loss:8.4f} | Val MAE: {val_mae_avg:8.2f} | "
               f"LR: {lr:.6f} | Time: {elapsed:.1f}s")
         print(f"           "
               f"Val per-nutrient MAE%:  "
@@ -602,18 +605,18 @@ def main():
                          for i, name in enumerate(LABEL_NAMES)))
 
         # Save best model
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
+        if val_mae_avg < best_val_loss:
+            best_val_loss = val_mae_avg
             epochs_without_improvement = 0
             ckpt_path = os.path.join(CHECKPOINT_DIR, "best_model.pth")
             torch.save({
                 "epoch": epoch,
                 "model_state_dict": model.state_dict(),
                 "optimizer_state_dict": optimizer.state_dict(),
-                "val_loss": val_loss,
+                "val_loss": val_mae_avg,
                 "train_loss": train_loss,
             }, ckpt_path)
-            print(f"           > Saved best model (val MAE: {val_loss:.2f})")
+            print(f"           > Saved best model (val MAE: {val_mae_avg:.2f})")
         else:
             epochs_without_improvement += 1
             if EARLY_STOP_PATIENCE and epochs_without_improvement >= EARLY_STOP_PATIENCE:
@@ -631,7 +634,7 @@ def main():
         "epoch": EPOCHS,
         "model_state_dict": model.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
-        "val_loss": val_loss,
+        "val_loss": val_mae_avg,
         "train_loss": train_loss,
     }, final_path)
 
