@@ -14,6 +14,7 @@ import csv
 import glob
 import json
 import os
+import random
 import time
 
 import matplotlib
@@ -21,7 +22,7 @@ matplotlib.use("Agg")  # non-interactive backend for servers
 import matplotlib.pyplot as plt
 import torch
 import torch.nn as nn
-from torch.utils.data import Dataset, DataLoader, random_split
+from torch.utils.data import Dataset, DataLoader
 from torchvision import models, transforms
 from PIL import Image
 
@@ -39,6 +40,8 @@ CHECKPOINT_DIR = "./checkpoints"
 PLOTS_DIR = "./plots"       # directory for training plots
 MAX_DISHES = None          # set to an int (e.g. 50) for smoke testing
 NUM_WORKERS = 8
+WEIGHT_DECAY = 1e-5           # L2 regularization for optimizer
+EARLY_STOP_PATIENCE = 15      # stop if val MAE doesn't improve for N epochs
 
 # Image sources to include: "overhead", "side_angles", or both
 IMAGE_SOURCES = ["overhead", "side_angles"]  # e.g. ["overhead", "side_angles"]
@@ -88,7 +91,7 @@ def load_metadata(data_dir):
 class Nutrition5kDataset(Dataset):
     """Dataset for Nutrition5k images (overhead + optional side-angle frames)."""
 
-    def __init__(self, data_dir, split_file, transform=None,
+    def __init__(self, data_dir, split_file=None, dish_ids=None, transform=None,
                  side_angle_transform=None, max_dishes=None,
                  image_sources=None, side_cameras=None):
         self.data_dir = data_dir
@@ -100,10 +103,15 @@ class Nutrition5kDataset(Dataset):
         if side_cameras is None:
             side_cameras = SIDE_CAMERAS
 
-        # Load split IDs
-        split_path = os.path.join(data_dir, split_file)
-        with open(split_path, "r") as f:
-            split_ids = [line.strip() for line in f if line.strip()]
+        # Load split IDs — either from pre-filtered list or split file
+        if dish_ids is not None:
+            split_ids = list(dish_ids)
+        elif split_file is not None:
+            split_path = os.path.join(data_dir, split_file)
+            with open(split_path, "r") as f:
+                split_ids = [line.strip() for line in f if line.strip()]
+        else:
+            raise ValueError("Must provide either split_file or dish_ids")
 
         if max_dishes:
             split_ids = split_ids[:max_dishes]
@@ -143,9 +151,10 @@ class Nutrition5kDataset(Dataset):
                         self.samples.append((frame_path, labels, dish_id, "side"))
                         n_side += 1
 
-        print(f"  Loaded {len(self.samples)} samples from {split_file} "
+        source = split_file if split_file else f"{len(split_ids)} dish IDs"
+        print(f"  Loaded {len(self.samples)} samples from {source} "
               f"({n_overhead} overhead, {n_side} side-angle frames, "
-              f"{len(split_ids)} in split, {len(metadata)} in metadata)")
+              f"{len(split_ids)} dishes, {len(metadata)} in metadata)")
 
     def __len__(self):
         return len(self.samples)
@@ -175,7 +184,7 @@ class NutritionModel(nn.Module):
       backbone features → shared 2x FC(4096) → per-task FC(4096) → FC(1) x 5
     """
 
-    def __init__(self, num_tasks=5, dropout=0.5):
+    def __init__(self, num_tasks=5, dropout=0.6):
         super().__init__()
 
         # InceptionV3 backbone (pretrained on ImageNet)
@@ -405,44 +414,51 @@ def main():
                              std=[0.229, 0.224, 0.225]),
     ])
 
-    # --- Dataset ---
+    # --- Dataset (dish-level train/val split to prevent data leakage) ---
     print("=== Loading dataset ===")
+
+    # Read all dish IDs from split file
+    split_path = os.path.join(DATA_DIR, "dish_ids/splits/rgb_train_ids.txt")
+    with open(split_path, "r") as f:
+        all_dish_ids = [line.strip() for line in f if line.strip()]
+    if MAX_DISHES:
+        all_dish_ids = all_dish_ids[:MAX_DISHES]
+
+    # Dish-level split (fixed seed for reproducibility)
+    rng = random.Random(42)
+    shuffled_ids = list(all_dish_ids)
+    rng.shuffle(shuffled_ids)
+    n_val_dishes = int(len(shuffled_ids) * VAL_SPLIT)
+    val_dish_ids = shuffled_ids[:n_val_dishes]
+    train_dish_ids = shuffled_ids[n_val_dishes:]
+    print(f"  Dish-level split: {len(train_dish_ids)} train dishes, {len(val_dish_ids)} val dishes")
+
     train_dataset = Nutrition5kDataset(
-        DATA_DIR, "dish_ids/splits/rgb_train_ids.txt",
+        DATA_DIR, dish_ids=train_dish_ids,
         transform=train_transform,
         side_angle_transform=side_angle_train_transform,
-        max_dishes=MAX_DISHES,
         image_sources=IMAGE_SOURCES,
         side_cameras=SIDE_CAMERAS,
     )
     val_dataset = Nutrition5kDataset(
-        DATA_DIR, "dish_ids/splits/rgb_train_ids.txt",
+        DATA_DIR, dish_ids=val_dish_ids,
         transform=val_transform,
         side_angle_transform=side_angle_val_transform,
-        max_dishes=MAX_DISHES,
         image_sources=IMAGE_SOURCES,
         side_cameras=SIDE_CAMERAS,
     )
 
-    # Split into train / val using a fixed seed for reproducibility
-    n_val = int(len(train_dataset) * VAL_SPLIT)
-    n_train = len(train_dataset) - n_val
-    generator = torch.Generator().manual_seed(42)
-    train_indices, val_indices = random_split(
-        range(len(train_dataset)), [n_train, n_val], generator=generator
-    )
-    train_subset = torch.utils.data.Subset(train_dataset, train_indices.indices)
-    val_subset = torch.utils.data.Subset(val_dataset, val_indices.indices)
-
     train_loader = DataLoader(
-        train_subset, batch_size=BATCH_SIZE, shuffle=True,
+        train_dataset, batch_size=BATCH_SIZE, shuffle=True,
         num_workers=NUM_WORKERS, pin_memory=True,
     )
     val_loader = DataLoader(
-        val_subset, batch_size=BATCH_SIZE, shuffle=False,
+        val_dataset, batch_size=BATCH_SIZE, shuffle=False,
         num_workers=NUM_WORKERS, pin_memory=True,
     )
-    print(f"  Train: {n_train} | Val: {n_val}")
+    n_train = len(train_dataset)
+    n_val = len(val_dataset)
+    print(f"  Train: {n_train} samples | Val: {n_val} samples")
     print()
 
     # --- Model ---
@@ -463,7 +479,7 @@ def main():
 
     # --- Optimizer, loss, scheduler ---
     # Only pass trainable params to optimizer initially
-    optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, model.parameters()), lr=LEARNING_RATE)
+    optimizer = torch.optim.RMSprop(filter(lambda p: p.requires_grad, model.parameters()), lr=LEARNING_RATE, weight_decay=WEIGHT_DECAY)
     criterion = nn.L1Loss()
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS)
 
@@ -477,7 +493,7 @@ def main():
         f.write(f"Input size:          299x299 RGB\n")
         f.write(f"Outputs:             {', '.join(LABEL_NAMES)}\n")
         f.write(f"Loss function:       L1 (MAE)\n")
-        f.write(f"Optimizer:           RMSProp (lr={LEARNING_RATE})\n")
+        f.write(f"Optimizer:           RMSProp (lr={LEARNING_RATE}, weight_decay={WEIGHT_DECAY})\n")
         f.write(f"LR scheduler:        CosineAnnealingLR (T_max={EPOCHS})\n")
         f.write(f"Batch size:          {BATCH_SIZE}\n")
         f.write(f"Epochs:              {EPOCHS}\n")
@@ -485,6 +501,8 @@ def main():
         f.write(f"Image sources:       {IMAGE_SOURCES}\n")
         f.write(f"Side cameras:        {SIDE_CAMERAS}\n")
         f.write(f"Freeze backbone:     {FREEZE_BACKBONE_EPOCHS} epochs\n")
+        f.write(f"Early stop patience: {EARLY_STOP_PATIENCE}\n")
+        f.write(f"Dropout:             0.6\n")
         f.write(f"Train samples:       {n_train}\n")
         f.write(f"Val samples:         {n_val}\n")
         f.write(f"Total parameters:    {total_params:,}\n")
@@ -502,6 +520,7 @@ def main():
     # --- Training loop ---
     print("=== Training ===")
     best_val_loss = float("inf")
+    epochs_without_improvement = 0
 
     # History tracking for plots
     history = {
@@ -521,7 +540,7 @@ def main():
             for param in model.backbone.parameters():
                 param.requires_grad = True
             # Rebuild optimizer with all parameters and a lower LR for backbone
-            optimizer = torch.optim.RMSprop(model.parameters(), lr=LEARNING_RATE * 0.1)
+            optimizer = torch.optim.RMSprop(model.parameters(), lr=LEARNING_RATE * 0.1, weight_decay=WEIGHT_DECAY)
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=EPOCHS - FREEZE_BACKBONE_EPOCHS)
 
         t0 = time.time()
@@ -552,6 +571,7 @@ def main():
         # Save best model
         if val_loss < best_val_loss:
             best_val_loss = val_loss
+            epochs_without_improvement = 0
             ckpt_path = os.path.join(CHECKPOINT_DIR, "best_model.pth")
             torch.save({
                 "epoch": epoch,
@@ -561,6 +581,12 @@ def main():
                 "train_loss": train_loss,
             }, ckpt_path)
             print(f"           > Saved best model (val MAE: {val_loss:.2f})")
+        else:
+            epochs_without_improvement += 1
+            if EARLY_STOP_PATIENCE and epochs_without_improvement >= EARLY_STOP_PATIENCE:
+                print(f"  Early stopping at epoch {epoch} (no improvement for {EARLY_STOP_PATIENCE} epochs)")
+                save_plots(history, PLOTS_DIR)
+                break
 
         # Update plots every 5 epochs (and on the last epoch)
         if epoch % 5 == 0 or epoch == EPOCHS:
