@@ -626,6 +626,7 @@ def main():
                 "optimizer_state_dict": optimizer.state_dict(),
                 "val_loss": val_mae_avg,
                 "train_loss": train_mae,
+                "label_mean": label_mean,
             }, ckpt_path)
             print(f"    > Saved best model (val MAE: {val_mae_avg:.2f})")
         else:
@@ -647,6 +648,7 @@ def main():
         "optimizer_state_dict": optimizer.state_dict(),
         "val_loss": val_mae_avg,
         "train_loss": train_mae,
+        "label_mean": label_mean,
     }, final_path)
 
     # Final plots

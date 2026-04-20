@@ -22,7 +22,7 @@ from torchvision import transforms
 # Import from train.py
 from train import (
     Nutrition5kDataset, NutritionModel, LABEL_NAMES,
-    SIDE_CAMERAS,
+    SIDE_CAMERAS, load_metadata,
 )
 
 
@@ -128,11 +128,34 @@ def main():
     model.load_state_dict(checkpoint["model_state_dict"])
     print(f"  Loaded checkpoint from epoch {checkpoint.get('epoch', '?')}")
     print(f"  Checkpoint val MAE: {checkpoint.get('val_loss', '?')}")
+
+    # --- Label mean for denormalization ---
+    # Model outputs normalized predictions (pred / label_mean during training).
+    # We need label_mean to convert back to real units.
+    if "label_mean" in checkpoint:
+        label_mean = checkpoint["label_mean"]
+        print(f"  Label mean (from checkpoint): {', '.join(f'{LABEL_NAMES[i]}: {label_mean[i]:.1f}' for i in range(5))}")
+    else:
+        # Fallback for old checkpoints: compute from training split
+        print("  Warning: checkpoint missing label_mean, computing from training split")
+        import random
+        split_path = os.path.join(args.data_dir, "dish_ids/splits/rgb_train_ids.txt")
+        with open(split_path, "r") as f:
+            train_ids = [line.strip() for line in f if line.strip()]
+        metadata = load_metadata(args.data_dir)
+        train_labels = torch.tensor(
+            [metadata[did] for did in train_ids if did in metadata],
+            dtype=torch.float32,
+        )
+        label_mean = train_labels.mean(dim=0).clamp(min=1.0)
+        print(f"  Label mean (computed): {', '.join(f'{LABEL_NAMES[i]}: {label_mean[i]:.1f}' for i in range(5))}")
     print()
 
     # --- Inference ---
     print("=== Running inference ===")
     dish_ids, preds, labels = run_inference(model, test_loader, device)
+    # Denormalize predictions back to real units
+    preds = preds * label_mean
     print(f"  Evaluated {len(dish_ids)} samples")
     print()
 
