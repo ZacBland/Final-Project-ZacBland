@@ -47,6 +47,18 @@ COLORS = [
     "#00BCD4", "#795548", "#E91E63", "#3F51B5", "#8BC34A",
 ]
 
+# Percentile bounds for outlier removal in plots
+OUTLIER_LOWER_PCT = 1
+OUTLIER_UPPER_PCT = 99
+
+
+def filter_outliers(values, lower_pct=OUTLIER_LOWER_PCT, upper_pct=OUTLIER_UPPER_PCT):
+    """Return a boolean mask that is True for values within the percentile range."""
+    arr = np.array(values)
+    lo = np.percentile(arr, lower_pct)
+    hi = np.percentile(arr, upper_pct)
+    return (arr >= lo) & (arr <= hi)
+
 
 # ---------------------------------------------------------------------------
 # Data loading helpers
@@ -421,14 +433,20 @@ def plot_scatter(all_dish_results, output_dir):
         for ei, name in enumerate(exp_names):
             ax = axes[ei // n_cols][ei % n_cols]
             results = all_dish_results[name]
-            actuals = [r["labels"][ni] for r in results]
-            predicted = [r["preds"][ni] for r in results]
+            actuals = np.array([r["labels"][ni] for r in results])
+            predicted = np.array([r["preds"][ni] for r in results])
 
-            ax.scatter(actuals, predicted, alpha=0.3, s=15, color=COLORS[ei % len(COLORS)])
+            # Filter outliers so the bulk of data is visible
+            mask = filter_outliers(actuals) & filter_outliers(predicted)
+            ax.scatter(actuals[mask], predicted[mask], alpha=0.3, s=15, color=COLORS[ei % len(COLORS)])
+            n_removed = (~mask).sum()
+            if n_removed > 0:
+                ax.text(0.05, 0.05, f"{n_removed} outliers hidden", transform=ax.transAxes,
+                        fontsize=7, alpha=0.6, va="bottom")
 
             # y=x reference line
-            lo = min(min(actuals), min(predicted))
-            hi = max(max(actuals), max(predicted))
+            lo = min(actuals[mask].min(), predicted[mask].min())
+            hi = max(actuals[mask].max(), predicted[mask].max())
             ax.plot([lo, hi], [lo, hi], "k--", linewidth=1, alpha=0.5)
 
             ax.set_xlabel(f"Actual {nutrient} ({LABEL_UNITS[nutrient]})")
@@ -460,8 +478,10 @@ def plot_error_distribution(all_dish_results, output_dir):
         ax = axes[ni]
         for ei, name in enumerate(exp_names):
             results = all_dish_results[name]
-            errors = [r["errors"][ni] for r in results]
-            ax.hist(errors, bins=30, alpha=0.4, color=COLORS[ei % len(COLORS)],
+            errors = np.array([r["errors"][ni] for r in results])
+            # Filter outlier errors so histogram shows the main distribution
+            mask = filter_outliers(errors)
+            ax.hist(errors[mask], bins=30, alpha=0.4, color=COLORS[ei % len(COLORS)],
                     label=name, density=True)
         ax.set_xlabel(f"Absolute Error ({LABEL_UNITS[nutrient]})")
         ax.set_ylabel("Density")
@@ -493,20 +513,27 @@ def plot_mass_correlation(all_dish_results, output_dir):
     for ei, name in enumerate(exp_names):
         ax = axes[0][ei]
         results = all_dish_results[name]
-        mass_errors = [r["errors"][mass_idx] for r in results]
-        cal_errors = [r["errors"][cal_idx] for r in results]
+        mass_errors = np.array([r["errors"][mass_idx] for r in results])
+        cal_errors = np.array([r["errors"][cal_idx] for r in results])
 
-        ax.scatter(mass_errors, cal_errors, alpha=0.3, s=15, color=COLORS[ei % len(COLORS)])
+        # Filter outliers for cleaner visualization
+        mask = filter_outliers(mass_errors) & filter_outliers(cal_errors)
+
+        ax.scatter(mass_errors[mask], cal_errors[mask], alpha=0.3, s=15, color=COLORS[ei % len(COLORS)])
         ax.set_xlabel("Mass Absolute Error (g)")
         ax.set_ylabel("Calories Absolute Error (kcal)")
         ax.set_title(f"{name}")
 
-        # Compute correlation
+        # Compute correlation on ALL data (not filtered)
         if len(mass_errors) > 2:
             corr = np.corrcoef(mass_errors, cal_errors)[0, 1]
             ax.text(0.05, 0.95, f"r = {corr:.3f}", transform=ax.transAxes,
                     fontsize=11, va="top", ha="left",
                     bbox=dict(boxstyle="round", facecolor="wheat", alpha=0.8))
+        n_removed = (~mask).sum()
+        if n_removed > 0:
+            ax.text(0.05, 0.05, f"{n_removed} outliers hidden", transform=ax.transAxes,
+                    fontsize=7, alpha=0.6, va="bottom")
 
     fig.suptitle("Mass Error vs Calories Error Correlation", fontsize=14)
     fig.tight_layout()
