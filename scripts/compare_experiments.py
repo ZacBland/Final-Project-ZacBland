@@ -344,7 +344,7 @@ def plot_radar(exp_maes_pct, output_dir):
     fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(polar=True))
 
     for ei, name in enumerate(exp_names):
-        values = exp_maes_pct[name]
+        values = list(exp_maes_pct[name])  # copy to avoid mutating original
         values += values[:1]
         ax.plot(angles, values, "o-", linewidth=2, color=COLORS[ei % len(COLORS)], label=name)
         ax.fill(angles, values, alpha=0.1, color=COLORS[ei % len(COLORS)])
