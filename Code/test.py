@@ -5,10 +5,13 @@ Evaluate a trained Nutrition5k model on the test split.
 Computes per-nutrient MAE and MAE% (matching the paper's evaluation protocol)
 and optionally saves a predictions CSV compatible with compute_statistics.py.
 
-Configure all settings via the global variables below, then run:
+Usage:
     python Code/test.py
+    python Code/test.py --checkpoint models/baseline_cnn/checkpoints/best_model.pth --output_csv models/baseline_cnn/predictions.csv
+    python Code/test.py --checkpoint models/MoE/checkpoints/best_model.pth --output_csv models/MoE/predictions.csv --image_sources overhead side_angles
 """
 
+import argparse
 import csv
 import os
 
@@ -24,18 +27,16 @@ from train import (
 
 
 # =====================================================================
-# CONFIGURATION — edit these variables to control evaluation
+# DEFAULTS — override via command-line arguments
 # =====================================================================
 
 DATA_DIR = "./data"
 CHECKPOINT = "./checkpoints/best_model.pth"
 BATCH_SIZE = 32
 NUM_WORKERS = 4
-MAX_DISHES = None          # set to an int for quick testing
-OUTPUT_CSV = None          # set to a path (e.g. "predictions.csv") to save predictions
-
-# Image sources to include: "overhead", "side_angles", or both
-IMAGE_SOURCES = ["overhead"]  # should match what the model was trained on
+MAX_DISHES = None
+OUTPUT_CSV = None
+IMAGE_SOURCES = ["overhead"]
 
 # =====================================================================
 
@@ -71,6 +72,18 @@ def compute_metrics(preds, labels):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Evaluate a trained Nutrition5k model on the test split.")
+    parser.add_argument("--data_dir", default=DATA_DIR, help="Path to data directory (default: %(default)s)")
+    parser.add_argument("--checkpoint", default=CHECKPOINT, help="Path to model checkpoint (default: %(default)s)")
+    parser.add_argument("--batch_size", type=int, default=BATCH_SIZE, help="Batch size (default: %(default)s)")
+    parser.add_argument("--num_workers", type=int, default=NUM_WORKERS, help="DataLoader workers (default: %(default)s)")
+    parser.add_argument("--max_dishes", type=int, default=MAX_DISHES, help="Limit number of dishes for quick testing")
+    parser.add_argument("--output_csv", default=OUTPUT_CSV, help="Path to save predictions CSV")
+    parser.add_argument("--image_sources", nargs="+", default=IMAGE_SOURCES,
+                        choices=["overhead", "side_angles"],
+                        help="Image sources to use (default: %(default)s)")
+    args = parser.parse_args()
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Device: {device}")
 
@@ -95,23 +108,23 @@ def main():
     # --- Dataset ---
     print("=== Loading test dataset ===")
     test_dataset = Nutrition5kDataset(
-        DATA_DIR, "dish_ids/splits/rgb_test_ids.txt",
+        args.data_dir, "dish_ids/splits/rgb_test_ids.txt",
         transform=test_transform,
         side_angle_transform=side_angle_test_transform,
-        max_dishes=MAX_DISHES,
-        image_sources=IMAGE_SOURCES,
+        max_dishes=args.max_dishes,
+        image_sources=args.image_sources,
         side_cameras=SIDE_CAMERAS,
     )
     test_loader = DataLoader(
-        test_dataset, batch_size=BATCH_SIZE, shuffle=False,
-        num_workers=NUM_WORKERS, pin_memory=True,
+        test_dataset, batch_size=args.batch_size, shuffle=False,
+        num_workers=args.num_workers, pin_memory=True,
     )
     print()
 
     # --- Load model ---
     print("=== Loading model ===")
     model = NutritionModel().to(device)
-    checkpoint = torch.load(CHECKPOINT, map_location=device, weights_only=False)
+    checkpoint = torch.load(args.checkpoint, map_location=device, weights_only=False)
     model.load_state_dict(checkpoint["model_state_dict"])
     print(f"  Loaded checkpoint from epoch {checkpoint.get('epoch', '?')}")
     print(f"  Checkpoint val MAE: {checkpoint.get('val_loss', '?')}")
@@ -139,15 +152,14 @@ def main():
     print()
 
     # --- Save predictions CSV ---
-    if OUTPUT_CSV:
-        with open(OUTPUT_CSV, "w", newline="") as f:
+    if args.output_csv:
+        os.makedirs(os.path.dirname(args.output_csv) or ".", exist_ok=True)
+        with open(args.output_csv, "w", newline="") as f:
             writer = csv.writer(f)
             for i, dish_id in enumerate(dish_ids):
                 row = [dish_id] + [f"{preds[i, j].item():.6f}" for j in range(5)]
                 writer.writerow(row)
-        print(f"  Predictions saved to {OUTPUT_CSV}")
-        print(f"  Evaluate with: python scripts/compute_statistics.py "
-              f"data/metadata/dish_metadata_cafe1.csv {OUTPUT_CSV} results.json")
+        print(f"  Predictions saved to {args.output_csv}")
 
 
 if __name__ == "__main__":

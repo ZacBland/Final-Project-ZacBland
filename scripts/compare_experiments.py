@@ -648,13 +648,22 @@ def main():
     # --- Load predictions ---
     print("=== Loading predictions ===")
     all_predictions = {}
+    missing_predictions = []
     for name, exp_dir in experiments.items():
         preds = load_predictions(exp_dir)
         if preds:
             all_predictions[name] = preds
             print(f"  {name}: {len(preds)} dish predictions loaded")
         else:
-            print(f"  {name}: no predictions.csv found (run test.py with OUTPUT_CSV to generate)")
+            missing_predictions.append((name, exp_dir))
+            print(f"  {name}: no predictions.csv found")
+
+    if missing_predictions:
+        print("\n  To generate missing predictions, run these commands from the project root:")
+        for name, exp_dir in missing_predictions:
+            ckpt = os.path.join(exp_dir, "checkpoints", "best_model.pth")
+            out_csv = os.path.join(exp_dir, "predictions.csv")
+            print(f"    python3 Code/test.py --checkpoint {ckpt} --output_csv {out_csv} --image_sources overhead side_angles")
     print()
 
     # --- Load metadata ---
@@ -799,10 +808,11 @@ def main():
 
     if not all_predictions:
         print("\nNote: No predictions.csv files found. Per-dish plots (5-11) were skipped.")
-        print("To generate predictions, run test.py for each experiment with OUTPUT_CSV set:")
+        print("To generate predictions, run from the project root:")
         for name, exp_dir in experiments.items():
             ckpt = os.path.join(exp_dir, "checkpoints", "best_model.pth")
-            print(f"  cd Code && python3 test.py  # set CHECKPOINT='{ckpt}', OUTPUT_CSV='{exp_dir}/predictions.csv'")
+            out_csv = os.path.join(exp_dir, "predictions.csv")
+            print(f"  python3 Code/test.py --checkpoint {ckpt} --output_csv {out_csv} --image_sources overhead side_angles")
 
 
 if __name__ == "__main__":
