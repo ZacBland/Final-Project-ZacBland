@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+"""
+Train a nutrition prediction model on the Nutrition5k dataset.
+
+Architecture closely follows the CVPR 2021 paper (arXiv 2103.03375):
+  InceptionV3 backbone → shared 2x4096 FC → per-task FC → 5 regression outputs
+  (calories, mass, fat, carbs, protein)
+
+Configure all settings via the global variables below, then run:
+    python Code/train.py
+"""
+
+import csv
+import glob
+import json
+import os
+import random
+import time
+
+import matplotlib
+matplotlib.use("Agg")  # non-interactive backend for servers
+import matplotlib.pyplot as plt
+import torch
+import torch.nn as nn
+from torch.utils.data import Dataset, DataLoader
+from torchvision import models, transforms
+from PIL import Image
+
+
+# =====================================================================
+# CONFIGURATION — edit these variables to control training
+# =====================================================================
+
+DATA_DIR = "./data"
+EPOCHS = 100
+BATCH_SIZE = 32
+LEARNING_RATE = 0.001
+VAL_SPLIT = 0.1           # fraction of training data used for validation
+CHECKPOINT_DIR = "./checkpoints"
+PLOTS_DIR = "./plots"       # directory for training plots
+MAX_DISHES = None          # set to an int (e.g. 50) for smoke testing
+NUM_WORKERS = 4
+WEIGHT_DECAY = 1e-4           # L2 regularization for optimizer
+EARLY_STOP_PATIENCE = 15      # stop if val MAE doesn't improve for N epochs
+
+# Per-task loss weights: [calories, mass, fat, carbs, protein]
+TASK_WEIGHTS = [1.0, 3.0, 1.0, 1.0, 1.0]  # prioritize mass prediction
+
+# Image sources to include: "overhead", "side_angles", or both
+IMAGE_SOURCES = ["overhead", "side_angles"]  # e.g. ["overhead", "side_angles"]
+
+# Side-angle cameras to use (only relevant if "side_angles" in IMAGE_SOURCES)
+SIDE_CAMERAS = ["camera_B", "camera_C"]
+
+# Freeze backbone for the first N epochs (train only FC heads to stabilize)
+FREEZE_BACKBONE_EPOCHS = 5
+
+# =====================================================================
+
+METADATA_CSVS = [

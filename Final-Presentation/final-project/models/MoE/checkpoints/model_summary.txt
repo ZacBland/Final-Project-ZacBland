@@ -1,0 +1,780 @@
+Nutrition5k Model Summary
+============================================================
+
+Device:              cuda
+Backbone:            InceptionV3 (ImageNet pretrained)
+Input size:          299x299 RGB
+Outputs:             calories, mass, fat, carbs, protein
+Loss function:       L1 (MAE)
+Optimizer:           RMSProp (lr=0.001, weight_decay=0.0001)
+LR scheduler:        CosineAnnealingLR (T_max=100)
+Batch size:          32
+Epochs:              100
+Val split:           0.1
+Image sources:       ['overhead', 'side_angles']
+Side cameras:        ['camera_B', 'camera_C']
+Freeze backbone:     5 epochs
+Early stop patience: 15
+Dropout:             0.6
+Train samples:       9409
+Val samples:         5853
+Total parameters:    65,860,585
+Trainable params:    44,075,017
+
+Architecture
+------------------------------------------------------------
+NutritionModel(
+  (backbone): Inception3(
+    (Conv2d_1a_3x3): BasicConv2d(
+      (conv): Conv2d(3, 32, kernel_size=(3, 3), stride=(2, 2), bias=False)
+      (bn): BatchNorm2d(32, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+    )
+    (Conv2d_2a_3x3): BasicConv2d(
+      (conv): Conv2d(32, 32, kernel_size=(3, 3), stride=(1, 1), bias=False)
+      (bn): BatchNorm2d(32, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+    )
+    (Conv2d_2b_3x3): BasicConv2d(
+      (conv): Conv2d(32, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+      (bn): BatchNorm2d(64, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+    )
+    (maxpool1): MaxPool2d(kernel_size=3, stride=2, padding=0, dilation=1, ceil_mode=False)
+    (Conv2d_3b_1x1): BasicConv2d(
+      (conv): Conv2d(64, 80, kernel_size=(1, 1), stride=(1, 1), bias=False)
+      (bn): BatchNorm2d(80, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+    )
+    (Conv2d_4a_3x3): BasicConv2d(
+      (conv): Conv2d(80, 192, kernel_size=(3, 3), stride=(1, 1), bias=False)
+      (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+    )
+    (maxpool2): MaxPool2d(kernel_size=3, stride=2, padding=0, dilation=1, ceil_mode=False)
+    (Mixed_5b): InceptionA(
+      (branch1x1): BasicConv2d(
+        (conv): Conv2d(192, 64, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(64, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch5x5_1): BasicConv2d(
+        (conv): Conv2d(192, 48, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(48, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch5x5_2): BasicConv2d(
+        (conv): Conv2d(48, 64, kernel_size=(5, 5), stride=(1, 1), padding=(2, 2), bias=False)
+        (bn): BatchNorm2d(64, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_1): BasicConv2d(
+        (conv): Conv2d(192, 64, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(64, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_2): BasicConv2d(
+        (conv): Conv2d(64, 96, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn): BatchNorm2d(96, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_3): BasicConv2d(
+        (conv): Conv2d(96, 96, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn): BatchNorm2d(96, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch_pool): BasicConv2d(
+        (conv): Conv2d(192, 32, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(32, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (Mixed_5c): InceptionA(
+      (branch1x1): BasicConv2d(
+        (conv): Conv2d(256, 64, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(64, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch5x5_1): BasicConv2d(
+        (conv): Conv2d(256, 48, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(48, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch5x5_2): BasicConv2d(
+        (conv): Conv2d(48, 64, kernel_size=(5, 5), stride=(1, 1), padding=(2, 2), bias=False)
+        (bn): BatchNorm2d(64, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_1): BasicConv2d(
+        (conv): Conv2d(256, 64, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(64, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_2): BasicConv2d(
+        (conv): Conv2d(64, 96, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn): BatchNorm2d(96, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_3): BasicConv2d(
+        (conv): Conv2d(96, 96, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn): BatchNorm2d(96, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch_pool): BasicConv2d(
+        (conv): Conv2d(256, 64, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(64, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (Mixed_5d): InceptionA(
+      (branch1x1): BasicConv2d(
+        (conv): Conv2d(288, 64, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(64, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch5x5_1): BasicConv2d(
+        (conv): Conv2d(288, 48, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(48, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch5x5_2): BasicConv2d(
+        (conv): Conv2d(48, 64, kernel_size=(5, 5), stride=(1, 1), padding=(2, 2), bias=False)
+        (bn): BatchNorm2d(64, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_1): BasicConv2d(
+        (conv): Conv2d(288, 64, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(64, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_2): BasicConv2d(
+        (conv): Conv2d(64, 96, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn): BatchNorm2d(96, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_3): BasicConv2d(
+        (conv): Conv2d(96, 96, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn): BatchNorm2d(96, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch_pool): BasicConv2d(
+        (conv): Conv2d(288, 64, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(64, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (Mixed_6a): InceptionB(
+      (branch3x3): BasicConv2d(
+        (conv): Conv2d(288, 384, kernel_size=(3, 3), stride=(2, 2), bias=False)
+        (bn): BatchNorm2d(384, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_1): BasicConv2d(
+        (conv): Conv2d(288, 64, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(64, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_2): BasicConv2d(
+        (conv): Conv2d(64, 96, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn): BatchNorm2d(96, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_3): BasicConv2d(
+        (conv): Conv2d(96, 96, kernel_size=(3, 3), stride=(2, 2), bias=False)
+        (bn): BatchNorm2d(96, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (Mixed_6b): InceptionC(
+      (branch1x1): BasicConv2d(
+        (conv): Conv2d(768, 192, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7_1): BasicConv2d(
+        (conv): Conv2d(768, 128, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(128, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7_2): BasicConv2d(
+        (conv): Conv2d(128, 128, kernel_size=(1, 7), stride=(1, 1), padding=(0, 3), bias=False)
+        (bn): BatchNorm2d(128, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7_3): BasicConv2d(
+        (conv): Conv2d(128, 192, kernel_size=(7, 1), stride=(1, 1), padding=(3, 0), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_1): BasicConv2d(
+        (conv): Conv2d(768, 128, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(128, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_2): BasicConv2d(
+        (conv): Conv2d(128, 128, kernel_size=(7, 1), stride=(1, 1), padding=(3, 0), bias=False)
+        (bn): BatchNorm2d(128, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_3): BasicConv2d(
+        (conv): Conv2d(128, 128, kernel_size=(1, 7), stride=(1, 1), padding=(0, 3), bias=False)
+        (bn): BatchNorm2d(128, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_4): BasicConv2d(
+        (conv): Conv2d(128, 128, kernel_size=(7, 1), stride=(1, 1), padding=(3, 0), bias=False)
+        (bn): BatchNorm2d(128, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_5): BasicConv2d(
+        (conv): Conv2d(128, 192, kernel_size=(1, 7), stride=(1, 1), padding=(0, 3), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch_pool): BasicConv2d(
+        (conv): Conv2d(768, 192, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (Mixed_6c): InceptionC(
+      (branch1x1): BasicConv2d(
+        (conv): Conv2d(768, 192, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7_1): BasicConv2d(
+        (conv): Conv2d(768, 160, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(160, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7_2): BasicConv2d(
+        (conv): Conv2d(160, 160, kernel_size=(1, 7), stride=(1, 1), padding=(0, 3), bias=False)
+        (bn): BatchNorm2d(160, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7_3): BasicConv2d(
+        (conv): Conv2d(160, 192, kernel_size=(7, 1), stride=(1, 1), padding=(3, 0), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_1): BasicConv2d(
+        (conv): Conv2d(768, 160, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(160, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_2): BasicConv2d(
+        (conv): Conv2d(160, 160, kernel_size=(7, 1), stride=(1, 1), padding=(3, 0), bias=False)
+        (bn): BatchNorm2d(160, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_3): BasicConv2d(
+        (conv): Conv2d(160, 160, kernel_size=(1, 7), stride=(1, 1), padding=(0, 3), bias=False)
+        (bn): BatchNorm2d(160, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_4): BasicConv2d(
+        (conv): Conv2d(160, 160, kernel_size=(7, 1), stride=(1, 1), padding=(3, 0), bias=False)
+        (bn): BatchNorm2d(160, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_5): BasicConv2d(
+        (conv): Conv2d(160, 192, kernel_size=(1, 7), stride=(1, 1), padding=(0, 3), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch_pool): BasicConv2d(
+        (conv): Conv2d(768, 192, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (Mixed_6d): InceptionC(
+      (branch1x1): BasicConv2d(
+        (conv): Conv2d(768, 192, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7_1): BasicConv2d(
+        (conv): Conv2d(768, 160, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(160, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7_2): BasicConv2d(
+        (conv): Conv2d(160, 160, kernel_size=(1, 7), stride=(1, 1), padding=(0, 3), bias=False)
+        (bn): BatchNorm2d(160, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7_3): BasicConv2d(
+        (conv): Conv2d(160, 192, kernel_size=(7, 1), stride=(1, 1), padding=(3, 0), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_1): BasicConv2d(
+        (conv): Conv2d(768, 160, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(160, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_2): BasicConv2d(
+        (conv): Conv2d(160, 160, kernel_size=(7, 1), stride=(1, 1), padding=(3, 0), bias=False)
+        (bn): BatchNorm2d(160, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_3): BasicConv2d(
+        (conv): Conv2d(160, 160, kernel_size=(1, 7), stride=(1, 1), padding=(0, 3), bias=False)
+        (bn): BatchNorm2d(160, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_4): BasicConv2d(
+        (conv): Conv2d(160, 160, kernel_size=(7, 1), stride=(1, 1), padding=(3, 0), bias=False)
+        (bn): BatchNorm2d(160, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_5): BasicConv2d(
+        (conv): Conv2d(160, 192, kernel_size=(1, 7), stride=(1, 1), padding=(0, 3), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch_pool): BasicConv2d(
+        (conv): Conv2d(768, 192, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (Mixed_6e): InceptionC(
+      (branch1x1): BasicConv2d(
+        (conv): Conv2d(768, 192, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7_1): BasicConv2d(
+        (conv): Conv2d(768, 192, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7_2): BasicConv2d(
+        (conv): Conv2d(192, 192, kernel_size=(1, 7), stride=(1, 1), padding=(0, 3), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7_3): BasicConv2d(
+        (conv): Conv2d(192, 192, kernel_size=(7, 1), stride=(1, 1), padding=(3, 0), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_1): BasicConv2d(
+        (conv): Conv2d(768, 192, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_2): BasicConv2d(
+        (conv): Conv2d(192, 192, kernel_size=(7, 1), stride=(1, 1), padding=(3, 0), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_3): BasicConv2d(
+        (conv): Conv2d(192, 192, kernel_size=(1, 7), stride=(1, 1), padding=(0, 3), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_4): BasicConv2d(
+        (conv): Conv2d(192, 192, kernel_size=(7, 1), stride=(1, 1), padding=(3, 0), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7dbl_5): BasicConv2d(
+        (conv): Conv2d(192, 192, kernel_size=(1, 7), stride=(1, 1), padding=(0, 3), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch_pool): BasicConv2d(
+        (conv): Conv2d(768, 192, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (AuxLogits): None
+    (Mixed_7a): InceptionD(
+      (branch3x3_1): BasicConv2d(
+        (conv): Conv2d(768, 192, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3_2): BasicConv2d(
+        (conv): Conv2d(192, 320, kernel_size=(3, 3), stride=(2, 2), bias=False)
+        (bn): BatchNorm2d(320, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7x3_1): BasicConv2d(
+        (conv): Conv2d(768, 192, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7x3_2): BasicConv2d(
+        (conv): Conv2d(192, 192, kernel_size=(1, 7), stride=(1, 1), padding=(0, 3), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7x3_3): BasicConv2d(
+        (conv): Conv2d(192, 192, kernel_size=(7, 1), stride=(1, 1), padding=(3, 0), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch7x7x3_4): BasicConv2d(
+        (conv): Conv2d(192, 192, kernel_size=(3, 3), stride=(2, 2), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (Mixed_7b): InceptionE(
+      (branch1x1): BasicConv2d(
+        (conv): Conv2d(1280, 320, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(320, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3_1): BasicConv2d(
+        (conv): Conv2d(1280, 384, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(384, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3_2a): BasicConv2d(
+        (conv): Conv2d(384, 384, kernel_size=(1, 3), stride=(1, 1), padding=(0, 1), bias=False)
+        (bn): BatchNorm2d(384, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3_2b): BasicConv2d(
+        (conv): Conv2d(384, 384, kernel_size=(3, 1), stride=(1, 1), padding=(1, 0), bias=False)
+        (bn): BatchNorm2d(384, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_1): BasicConv2d(
+        (conv): Conv2d(1280, 448, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(448, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_2): BasicConv2d(
+        (conv): Conv2d(448, 384, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn): BatchNorm2d(384, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_3a): BasicConv2d(
+        (conv): Conv2d(384, 384, kernel_size=(1, 3), stride=(1, 1), padding=(0, 1), bias=False)
+        (bn): BatchNorm2d(384, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_3b): BasicConv2d(
+        (conv): Conv2d(384, 384, kernel_size=(3, 1), stride=(1, 1), padding=(1, 0), bias=False)
+        (bn): BatchNorm2d(384, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch_pool): BasicConv2d(
+        (conv): Conv2d(1280, 192, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (Mixed_7c): InceptionE(
+      (branch1x1): BasicConv2d(
+        (conv): Conv2d(2048, 320, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(320, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3_1): BasicConv2d(
+        (conv): Conv2d(2048, 384, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(384, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3_2a): BasicConv2d(
+        (conv): Conv2d(384, 384, kernel_size=(1, 3), stride=(1, 1), padding=(0, 1), bias=False)
+        (bn): BatchNorm2d(384, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3_2b): BasicConv2d(
+        (conv): Conv2d(384, 384, kernel_size=(3, 1), stride=(1, 1), padding=(1, 0), bias=False)
+        (bn): BatchNorm2d(384, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_1): BasicConv2d(
+        (conv): Conv2d(2048, 448, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(448, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_2): BasicConv2d(
+        (conv): Conv2d(448, 384, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+        (bn): BatchNorm2d(384, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_3a): BasicConv2d(
+        (conv): Conv2d(384, 384, kernel_size=(1, 3), stride=(1, 1), padding=(0, 1), bias=False)
+        (bn): BatchNorm2d(384, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch3x3dbl_3b): BasicConv2d(
+        (conv): Conv2d(384, 384, kernel_size=(3, 1), stride=(1, 1), padding=(1, 0), bias=False)
+        (bn): BatchNorm2d(384, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+      (branch_pool): BasicConv2d(
+        (conv): Conv2d(2048, 192, kernel_size=(1, 1), stride=(1, 1), bias=False)
+        (bn): BatchNorm2d(192, eps=0.001, momentum=0.1, affine=True, track_running_stats=True)
+      )
+    )
+    (avgpool): AdaptiveAvgPool2d(output_size=(1, 1))
+    (dropout): Dropout(p=0.5, inplace=False)
+    (fc): Identity()
+  )
+  (gate): Sequential(
+    (0): Flatten(start_dim=1, end_dim=-1)
+    (1): Linear(in_features=2048, out_features=4, bias=True)
+    (2): Softmax(dim=1)
+  )
+  (experts): ModuleList(
+    (0-3): 4 x Sequential(
+      (0): Flatten(start_dim=1, end_dim=-1)
+      (1): Linear(in_features=2048, out_features=2048, bias=True)
+      (2): ReLU(inplace=True)
+      (3): Dropout(p=0.6, inplace=False)
+      (4): Linear(in_features=2048, out_features=2048, bias=True)
+      (5): ReLU(inplace=True)
+      (6): Dropout(p=0.6, inplace=False)
+    )
+  )
+  (task_heads): ModuleList(
+    (0-4): 5 x Sequential(
+      (0): Linear(in_features=2048, out_features=1024, bias=True)
+      (1): ReLU(inplace=True)
+      (2): Dropout(p=0.6, inplace=False)
+      (3): Linear(in_features=1024, out_features=1, bias=True)
+    )
+  )
+)
+
+Per-layer Parameter Counts
+------------------------------------------------------------
+  backbone.Conv2d_1a_3x3.conv.weight                               864  frozen
+  backbone.Conv2d_1a_3x3.bn.weight                                  32  frozen
+  backbone.Conv2d_1a_3x3.bn.bias                                    32  frozen
+  backbone.Conv2d_2a_3x3.conv.weight                             9,216  frozen
+  backbone.Conv2d_2a_3x3.bn.weight                                  32  frozen
+  backbone.Conv2d_2a_3x3.bn.bias                                    32  frozen
+  backbone.Conv2d_2b_3x3.conv.weight                            18,432  frozen
+  backbone.Conv2d_2b_3x3.bn.weight                                  64  frozen
+  backbone.Conv2d_2b_3x3.bn.bias                                    64  frozen
+  backbone.Conv2d_3b_1x1.conv.weight                             5,120  frozen
+  backbone.Conv2d_3b_1x1.bn.weight                                  80  frozen
+  backbone.Conv2d_3b_1x1.bn.bias                                    80  frozen
+  backbone.Conv2d_4a_3x3.conv.weight                           138,240  frozen
+  backbone.Conv2d_4a_3x3.bn.weight                                 192  frozen
+  backbone.Conv2d_4a_3x3.bn.bias                                   192  frozen
+  backbone.Mixed_5b.branch1x1.conv.weight                       12,288  frozen
+  backbone.Mixed_5b.branch1x1.bn.weight                             64  frozen
+  backbone.Mixed_5b.branch1x1.bn.bias                               64  frozen
+  backbone.Mixed_5b.branch5x5_1.conv.weight                      9,216  frozen
+  backbone.Mixed_5b.branch5x5_1.bn.weight                           48  frozen
+  backbone.Mixed_5b.branch5x5_1.bn.bias                             48  frozen
+  backbone.Mixed_5b.branch5x5_2.conv.weight                     76,800  frozen
+  backbone.Mixed_5b.branch5x5_2.bn.weight                           64  frozen
+  backbone.Mixed_5b.branch5x5_2.bn.bias                             64  frozen
+  backbone.Mixed_5b.branch3x3dbl_1.conv.weight                  12,288  frozen
+  backbone.Mixed_5b.branch3x3dbl_1.bn.weight                        64  frozen
+  backbone.Mixed_5b.branch3x3dbl_1.bn.bias                          64  frozen
+  backbone.Mixed_5b.branch3x3dbl_2.conv.weight                  55,296  frozen
+  backbone.Mixed_5b.branch3x3dbl_2.bn.weight                        96  frozen
+  backbone.Mixed_5b.branch3x3dbl_2.bn.bias                          96  frozen
+  backbone.Mixed_5b.branch3x3dbl_3.conv.weight                  82,944  frozen
+  backbone.Mixed_5b.branch3x3dbl_3.bn.weight                        96  frozen
+  backbone.Mixed_5b.branch3x3dbl_3.bn.bias                          96  frozen
+  backbone.Mixed_5b.branch_pool.conv.weight                      6,144  frozen
+  backbone.Mixed_5b.branch_pool.bn.weight                           32  frozen
+  backbone.Mixed_5b.branch_pool.bn.bias                             32  frozen
+  backbone.Mixed_5c.branch1x1.conv.weight                       16,384  frozen
+  backbone.Mixed_5c.branch1x1.bn.weight                             64  frozen
+  backbone.Mixed_5c.branch1x1.bn.bias                               64  frozen
+  backbone.Mixed_5c.branch5x5_1.conv.weight                     12,288  frozen
+  backbone.Mixed_5c.branch5x5_1.bn.weight                           48  frozen
+  backbone.Mixed_5c.branch5x5_1.bn.bias                             48  frozen
+  backbone.Mixed_5c.branch5x5_2.conv.weight                     76,800  frozen
+  backbone.Mixed_5c.branch5x5_2.bn.weight                           64  frozen
+  backbone.Mixed_5c.branch5x5_2.bn.bias                             64  frozen
+  backbone.Mixed_5c.branch3x3dbl_1.conv.weight                  16,384  frozen
+  backbone.Mixed_5c.branch3x3dbl_1.bn.weight                        64  frozen
+  backbone.Mixed_5c.branch3x3dbl_1.bn.bias                          64  frozen
+  backbone.Mixed_5c.branch3x3dbl_2.conv.weight                  55,296  frozen
+  backbone.Mixed_5c.branch3x3dbl_2.bn.weight                        96  frozen
+  backbone.Mixed_5c.branch3x3dbl_2.bn.bias                          96  frozen
+  backbone.Mixed_5c.branch3x3dbl_3.conv.weight                  82,944  frozen
+  backbone.Mixed_5c.branch3x3dbl_3.bn.weight                        96  frozen
+  backbone.Mixed_5c.branch3x3dbl_3.bn.bias                          96  frozen
+  backbone.Mixed_5c.branch_pool.conv.weight                     16,384  frozen
+  backbone.Mixed_5c.branch_pool.bn.weight                           64  frozen
+  backbone.Mixed_5c.branch_pool.bn.bias                             64  frozen
+  backbone.Mixed_5d.branch1x1.conv.weight                       18,432  frozen
+  backbone.Mixed_5d.branch1x1.bn.weight                             64  frozen
+  backbone.Mixed_5d.branch1x1.bn.bias                               64  frozen
+  backbone.Mixed_5d.branch5x5_1.conv.weight                     13,824  frozen
+  backbone.Mixed_5d.branch5x5_1.bn.weight                           48  frozen
+  backbone.Mixed_5d.branch5x5_1.bn.bias                             48  frozen
+  backbone.Mixed_5d.branch5x5_2.conv.weight                     76,800  frozen
+  backbone.Mixed_5d.branch5x5_2.bn.weight                           64  frozen
+  backbone.Mixed_5d.branch5x5_2.bn.bias                             64  frozen
+  backbone.Mixed_5d.branch3x3dbl_1.conv.weight                  18,432  frozen
+  backbone.Mixed_5d.branch3x3dbl_1.bn.weight                        64  frozen
+  backbone.Mixed_5d.branch3x3dbl_1.bn.bias                          64  frozen
+  backbone.Mixed_5d.branch3x3dbl_2.conv.weight                  55,296  frozen
+  backbone.Mixed_5d.branch3x3dbl_2.bn.weight                        96  frozen
+  backbone.Mixed_5d.branch3x3dbl_2.bn.bias                          96  frozen
+  backbone.Mixed_5d.branch3x3dbl_3.conv.weight                  82,944  frozen
+  backbone.Mixed_5d.branch3x3dbl_3.bn.weight                        96  frozen
+  backbone.Mixed_5d.branch3x3dbl_3.bn.bias                          96  frozen
+  backbone.Mixed_5d.branch_pool.conv.weight                     18,432  frozen
+  backbone.Mixed_5d.branch_pool.bn.weight                           64  frozen
+  backbone.Mixed_5d.branch_pool.bn.bias                             64  frozen
+  backbone.Mixed_6a.branch3x3.conv.weight                      995,328  frozen
+  backbone.Mixed_6a.branch3x3.bn.weight                            384  frozen
+  backbone.Mixed_6a.branch3x3.bn.bias                              384  frozen
+  backbone.Mixed_6a.branch3x3dbl_1.conv.weight                  18,432  frozen
+  backbone.Mixed_6a.branch3x3dbl_1.bn.weight                        64  frozen
+  backbone.Mixed_6a.branch3x3dbl_1.bn.bias                          64  frozen
+  backbone.Mixed_6a.branch3x3dbl_2.conv.weight                  55,296  frozen
+  backbone.Mixed_6a.branch3x3dbl_2.bn.weight                        96  frozen
+  backbone.Mixed_6a.branch3x3dbl_2.bn.bias                          96  frozen
+  backbone.Mixed_6a.branch3x3dbl_3.conv.weight                  82,944  frozen
+  backbone.Mixed_6a.branch3x3dbl_3.bn.weight                        96  frozen
+  backbone.Mixed_6a.branch3x3dbl_3.bn.bias                          96  frozen
+  backbone.Mixed_6b.branch1x1.conv.weight                      147,456  frozen
+  backbone.Mixed_6b.branch1x1.bn.weight                            192  frozen
+  backbone.Mixed_6b.branch1x1.bn.bias                              192  frozen
+  backbone.Mixed_6b.branch7x7_1.conv.weight                     98,304  frozen
+  backbone.Mixed_6b.branch7x7_1.bn.weight                          128  frozen
+  backbone.Mixed_6b.branch7x7_1.bn.bias                            128  frozen
+  backbone.Mixed_6b.branch7x7_2.conv.weight                    114,688  frozen
+  backbone.Mixed_6b.branch7x7_2.bn.weight                          128  frozen
+  backbone.Mixed_6b.branch7x7_2.bn.bias                            128  frozen
+  backbone.Mixed_6b.branch7x7_3.conv.weight                    172,032  frozen
+  backbone.Mixed_6b.branch7x7_3.bn.weight                          192  frozen
+  backbone.Mixed_6b.branch7x7_3.bn.bias                            192  frozen
+  backbone.Mixed_6b.branch7x7dbl_1.conv.weight                  98,304  frozen
+  backbone.Mixed_6b.branch7x7dbl_1.bn.weight                       128  frozen
+  backbone.Mixed_6b.branch7x7dbl_1.bn.bias                         128  frozen
+  backbone.Mixed_6b.branch7x7dbl_2.conv.weight                 114,688  frozen
+  backbone.Mixed_6b.branch7x7dbl_2.bn.weight                       128  frozen
+  backbone.Mixed_6b.branch7x7dbl_2.bn.bias                         128  frozen
+  backbone.Mixed_6b.branch7x7dbl_3.conv.weight                 114,688  frozen
+  backbone.Mixed_6b.branch7x7dbl_3.bn.weight                       128  frozen
+  backbone.Mixed_6b.branch7x7dbl_3.bn.bias                         128  frozen
+  backbone.Mixed_6b.branch7x7dbl_4.conv.weight                 114,688  frozen
+  backbone.Mixed_6b.branch7x7dbl_4.bn.weight                       128  frozen
+  backbone.Mixed_6b.branch7x7dbl_4.bn.bias                         128  frozen
+  backbone.Mixed_6b.branch7x7dbl_5.conv.weight                 172,032  frozen
+  backbone.Mixed_6b.branch7x7dbl_5.bn.weight                       192  frozen
+  backbone.Mixed_6b.branch7x7dbl_5.bn.bias                         192  frozen
+  backbone.Mixed_6b.branch_pool.conv.weight                    147,456  frozen
+  backbone.Mixed_6b.branch_pool.bn.weight                          192  frozen
+  backbone.Mixed_6b.branch_pool.bn.bias                            192  frozen
+  backbone.Mixed_6c.branch1x1.conv.weight                      147,456  frozen
+  backbone.Mixed_6c.branch1x1.bn.weight                            192  frozen
+  backbone.Mixed_6c.branch1x1.bn.bias                              192  frozen
+  backbone.Mixed_6c.branch7x7_1.conv.weight                    122,880  frozen
+  backbone.Mixed_6c.branch7x7_1.bn.weight                          160  frozen
+  backbone.Mixed_6c.branch7x7_1.bn.bias                            160  frozen
+  backbone.Mixed_6c.branch7x7_2.conv.weight                    179,200  frozen
+  backbone.Mixed_6c.branch7x7_2.bn.weight                          160  frozen
+  backbone.Mixed_6c.branch7x7_2.bn.bias                            160  frozen
+  backbone.Mixed_6c.branch7x7_3.conv.weight                    215,040  frozen
+  backbone.Mixed_6c.branch7x7_3.bn.weight                          192  frozen
+  backbone.Mixed_6c.branch7x7_3.bn.bias                            192  frozen
+  backbone.Mixed_6c.branch7x7dbl_1.conv.weight                 122,880  frozen
+  backbone.Mixed_6c.branch7x7dbl_1.bn.weight                       160  frozen
+  backbone.Mixed_6c.branch7x7dbl_1.bn.bias                         160  frozen
+  backbone.Mixed_6c.branch7x7dbl_2.conv.weight                 179,200  frozen
+  backbone.Mixed_6c.branch7x7dbl_2.bn.weight                       160  frozen
+  backbone.Mixed_6c.branch7x7dbl_2.bn.bias                         160  frozen
+  backbone.Mixed_6c.branch7x7dbl_3.conv.weight                 179,200  frozen
+  backbone.Mixed_6c.branch7x7dbl_3.bn.weight                       160  frozen
+  backbone.Mixed_6c.branch7x7dbl_3.bn.bias                         160  frozen
+  backbone.Mixed_6c.branch7x7dbl_4.conv.weight                 179,200  frozen
+  backbone.Mixed_6c.branch7x7dbl_4.bn.weight                       160  frozen
+  backbone.Mixed_6c.branch7x7dbl_4.bn.bias                         160  frozen
+  backbone.Mixed_6c.branch7x7dbl_5.conv.weight                 215,040  frozen
+  backbone.Mixed_6c.branch7x7dbl_5.bn.weight                       192  frozen
+  backbone.Mixed_6c.branch7x7dbl_5.bn.bias                         192  frozen
+  backbone.Mixed_6c.branch_pool.conv.weight                    147,456  frozen
+  backbone.Mixed_6c.branch_pool.bn.weight                          192  frozen
+  backbone.Mixed_6c.branch_pool.bn.bias                            192  frozen
+  backbone.Mixed_6d.branch1x1.conv.weight                      147,456  frozen
+  backbone.Mixed_6d.branch1x1.bn.weight                            192  frozen
+  backbone.Mixed_6d.branch1x1.bn.bias                              192  frozen
+  backbone.Mixed_6d.branch7x7_1.conv.weight                    122,880  frozen
+  backbone.Mixed_6d.branch7x7_1.bn.weight                          160  frozen
+  backbone.Mixed_6d.branch7x7_1.bn.bias                            160  frozen
+  backbone.Mixed_6d.branch7x7_2.conv.weight                    179,200  frozen
+  backbone.Mixed_6d.branch7x7_2.bn.weight                          160  frozen
+  backbone.Mixed_6d.branch7x7_2.bn.bias                            160  frozen
+  backbone.Mixed_6d.branch7x7_3.conv.weight                    215,040  frozen
+  backbone.Mixed_6d.branch7x7_3.bn.weight                          192  frozen
+  backbone.Mixed_6d.branch7x7_3.bn.bias                            192  frozen
+  backbone.Mixed_6d.branch7x7dbl_1.conv.weight                 122,880  frozen
+  backbone.Mixed_6d.branch7x7dbl_1.bn.weight                       160  frozen
+  backbone.Mixed_6d.branch7x7dbl_1.bn.bias                         160  frozen
+  backbone.Mixed_6d.branch7x7dbl_2.conv.weight                 179,200  frozen
+  backbone.Mixed_6d.branch7x7dbl_2.bn.weight                       160  frozen
+  backbone.Mixed_6d.branch7x7dbl_2.bn.bias                         160  frozen
+  backbone.Mixed_6d.branch7x7dbl_3.conv.weight                 179,200  frozen
+  backbone.Mixed_6d.branch7x7dbl_3.bn.weight                       160  frozen
+  backbone.Mixed_6d.branch7x7dbl_3.bn.bias                         160  frozen
+  backbone.Mixed_6d.branch7x7dbl_4.conv.weight                 179,200  frozen
+  backbone.Mixed_6d.branch7x7dbl_4.bn.weight                       160  frozen
+  backbone.Mixed_6d.branch7x7dbl_4.bn.bias                         160  frozen
+  backbone.Mixed_6d.branch7x7dbl_5.conv.weight                 215,040  frozen
+  backbone.Mixed_6d.branch7x7dbl_5.bn.weight                       192  frozen
+  backbone.Mixed_6d.branch7x7dbl_5.bn.bias                         192  frozen
+  backbone.Mixed_6d.branch_pool.conv.weight                    147,456  frozen
+  backbone.Mixed_6d.branch_pool.bn.weight                          192  frozen
+  backbone.Mixed_6d.branch_pool.bn.bias                            192  frozen
+  backbone.Mixed_6e.branch1x1.conv.weight                      147,456  frozen
+  backbone.Mixed_6e.branch1x1.bn.weight                            192  frozen
+  backbone.Mixed_6e.branch1x1.bn.bias                              192  frozen
+  backbone.Mixed_6e.branch7x7_1.conv.weight                    147,456  frozen
+  backbone.Mixed_6e.branch7x7_1.bn.weight                          192  frozen
+  backbone.Mixed_6e.branch7x7_1.bn.bias                            192  frozen
+  backbone.Mixed_6e.branch7x7_2.conv.weight                    258,048  frozen
+  backbone.Mixed_6e.branch7x7_2.bn.weight                          192  frozen
+  backbone.Mixed_6e.branch7x7_2.bn.bias                            192  frozen
+  backbone.Mixed_6e.branch7x7_3.conv.weight                    258,048  frozen
+  backbone.Mixed_6e.branch7x7_3.bn.weight                          192  frozen
+  backbone.Mixed_6e.branch7x7_3.bn.bias                            192  frozen
+  backbone.Mixed_6e.branch7x7dbl_1.conv.weight                 147,456  frozen
+  backbone.Mixed_6e.branch7x7dbl_1.bn.weight                       192  frozen
+  backbone.Mixed_6e.branch7x7dbl_1.bn.bias                         192  frozen
+  backbone.Mixed_6e.branch7x7dbl_2.conv.weight                 258,048  frozen
+  backbone.Mixed_6e.branch7x7dbl_2.bn.weight                       192  frozen
+  backbone.Mixed_6e.branch7x7dbl_2.bn.bias                         192  frozen
+  backbone.Mixed_6e.branch7x7dbl_3.conv.weight                 258,048  frozen
+  backbone.Mixed_6e.branch7x7dbl_3.bn.weight                       192  frozen
+  backbone.Mixed_6e.branch7x7dbl_3.bn.bias                         192  frozen
+  backbone.Mixed_6e.branch7x7dbl_4.conv.weight                 258,048  frozen
+  backbone.Mixed_6e.branch7x7dbl_4.bn.weight                       192  frozen
+  backbone.Mixed_6e.branch7x7dbl_4.bn.bias                         192  frozen
+  backbone.Mixed_6e.branch7x7dbl_5.conv.weight                 258,048  frozen
+  backbone.Mixed_6e.branch7x7dbl_5.bn.weight                       192  frozen
+  backbone.Mixed_6e.branch7x7dbl_5.bn.bias                         192  frozen
+  backbone.Mixed_6e.branch_pool.conv.weight                    147,456  frozen
+  backbone.Mixed_6e.branch_pool.bn.weight                          192  frozen
+  backbone.Mixed_6e.branch_pool.bn.bias                            192  frozen
+  backbone.Mixed_7a.branch3x3_1.conv.weight                    147,456  frozen
+  backbone.Mixed_7a.branch3x3_1.bn.weight                          192  frozen
+  backbone.Mixed_7a.branch3x3_1.bn.bias                            192  frozen
+  backbone.Mixed_7a.branch3x3_2.conv.weight                    552,960  frozen
+  backbone.Mixed_7a.branch3x3_2.bn.weight                          320  frozen
+  backbone.Mixed_7a.branch3x3_2.bn.bias                            320  frozen
+  backbone.Mixed_7a.branch7x7x3_1.conv.weight                  147,456  frozen
+  backbone.Mixed_7a.branch7x7x3_1.bn.weight                        192  frozen
+  backbone.Mixed_7a.branch7x7x3_1.bn.bias                          192  frozen
+  backbone.Mixed_7a.branch7x7x3_2.conv.weight                  258,048  frozen
+  backbone.Mixed_7a.branch7x7x3_2.bn.weight                        192  frozen
+  backbone.Mixed_7a.branch7x7x3_2.bn.bias                          192  frozen
+  backbone.Mixed_7a.branch7x7x3_3.conv.weight                  258,048  frozen
+  backbone.Mixed_7a.branch7x7x3_3.bn.weight                        192  frozen
+  backbone.Mixed_7a.branch7x7x3_3.bn.bias                          192  frozen
+  backbone.Mixed_7a.branch7x7x3_4.conv.weight                  331,776  frozen
+  backbone.Mixed_7a.branch7x7x3_4.bn.weight                        192  frozen
+  backbone.Mixed_7a.branch7x7x3_4.bn.bias                          192  frozen
+  backbone.Mixed_7b.branch1x1.conv.weight                      409,600  frozen
+  backbone.Mixed_7b.branch1x1.bn.weight                            320  frozen
+  backbone.Mixed_7b.branch1x1.bn.bias                              320  frozen
+  backbone.Mixed_7b.branch3x3_1.conv.weight                    491,520  frozen
+  backbone.Mixed_7b.branch3x3_1.bn.weight                          384  frozen
+  backbone.Mixed_7b.branch3x3_1.bn.bias                            384  frozen
+  backbone.Mixed_7b.branch3x3_2a.conv.weight                   442,368  frozen
+  backbone.Mixed_7b.branch3x3_2a.bn.weight                         384  frozen
+  backbone.Mixed_7b.branch3x3_2a.bn.bias                           384  frozen
+  backbone.Mixed_7b.branch3x3_2b.conv.weight                   442,368  frozen
+  backbone.Mixed_7b.branch3x3_2b.bn.weight                         384  frozen
+  backbone.Mixed_7b.branch3x3_2b.bn.bias                           384  frozen
+  backbone.Mixed_7b.branch3x3dbl_1.conv.weight                 573,440  frozen
+  backbone.Mixed_7b.branch3x3dbl_1.bn.weight                       448  frozen
+  backbone.Mixed_7b.branch3x3dbl_1.bn.bias                         448  frozen
+  backbone.Mixed_7b.branch3x3dbl_2.conv.weight               1,548,288  frozen
+  backbone.Mixed_7b.branch3x3dbl_2.bn.weight                       384  frozen
+  backbone.Mixed_7b.branch3x3dbl_2.bn.bias                         384  frozen
+  backbone.Mixed_7b.branch3x3dbl_3a.conv.weight                442,368  frozen
+  backbone.Mixed_7b.branch3x3dbl_3a.bn.weight                      384  frozen
+  backbone.Mixed_7b.branch3x3dbl_3a.bn.bias                        384  frozen
+  backbone.Mixed_7b.branch3x3dbl_3b.conv.weight                442,368  frozen
+  backbone.Mixed_7b.branch3x3dbl_3b.bn.weight                      384  frozen
+  backbone.Mixed_7b.branch3x3dbl_3b.bn.bias                        384  frozen
+  backbone.Mixed_7b.branch_pool.conv.weight                    245,760  frozen
+  backbone.Mixed_7b.branch_pool.bn.weight                          192  frozen
+  backbone.Mixed_7b.branch_pool.bn.bias                            192  frozen
+  backbone.Mixed_7c.branch1x1.conv.weight                      655,360  frozen
+  backbone.Mixed_7c.branch1x1.bn.weight                            320  frozen
+  backbone.Mixed_7c.branch1x1.bn.bias                              320  frozen
+  backbone.Mixed_7c.branch3x3_1.conv.weight                    786,432  frozen
+  backbone.Mixed_7c.branch3x3_1.bn.weight                          384  frozen
+  backbone.Mixed_7c.branch3x3_1.bn.bias                            384  frozen
+  backbone.Mixed_7c.branch3x3_2a.conv.weight                   442,368  frozen
+  backbone.Mixed_7c.branch3x3_2a.bn.weight                         384  frozen
+  backbone.Mixed_7c.branch3x3_2a.bn.bias                           384  frozen
+  backbone.Mixed_7c.branch3x3_2b.conv.weight                   442,368  frozen
+  backbone.Mixed_7c.branch3x3_2b.bn.weight                         384  frozen
+  backbone.Mixed_7c.branch3x3_2b.bn.bias                           384  frozen
+  backbone.Mixed_7c.branch3x3dbl_1.conv.weight                 917,504  frozen
+  backbone.Mixed_7c.branch3x3dbl_1.bn.weight                       448  frozen
+  backbone.Mixed_7c.branch3x3dbl_1.bn.bias                         448  frozen
+  backbone.Mixed_7c.branch3x3dbl_2.conv.weight               1,548,288  frozen
+  backbone.Mixed_7c.branch3x3dbl_2.bn.weight                       384  frozen
+  backbone.Mixed_7c.branch3x3dbl_2.bn.bias                         384  frozen
+  backbone.Mixed_7c.branch3x3dbl_3a.conv.weight                442,368  frozen
+  backbone.Mixed_7c.branch3x3dbl_3a.bn.weight                      384  frozen
+  backbone.Mixed_7c.branch3x3dbl_3a.bn.bias                        384  frozen
+  backbone.Mixed_7c.branch3x3dbl_3b.conv.weight                442,368  frozen
+  backbone.Mixed_7c.branch3x3dbl_3b.bn.weight                      384  frozen
+  backbone.Mixed_7c.branch3x3dbl_3b.bn.bias                        384  frozen
+  backbone.Mixed_7c.branch_pool.conv.weight                    393,216  frozen
+  backbone.Mixed_7c.branch_pool.bn.weight                          192  frozen
+  backbone.Mixed_7c.branch_pool.bn.bias                            192  frozen
+  gate.1.weight                                                  8,192  train
+  gate.1.bias                                                        4  train
+  experts.0.1.weight                                         4,194,304  train
+  experts.0.1.bias                                               2,048  train
+  experts.0.4.weight                                         4,194,304  train
+  experts.0.4.bias                                               2,048  train
+  experts.1.1.weight                                         4,194,304  train
+  experts.1.1.bias                                               2,048  train
+  experts.1.4.weight                                         4,194,304  train
+  experts.1.4.bias                                               2,048  train
+  experts.2.1.weight                                         4,194,304  train
+  experts.2.1.bias                                               2,048  train
+  experts.2.4.weight                                         4,194,304  train
+  experts.2.4.bias                                               2,048  train
+  experts.3.1.weight                                         4,194,304  train
+  experts.3.1.bias                                               2,048  train
+  experts.3.4.weight                                         4,194,304  train
+  experts.3.4.bias                                               2,048  train
+  task_heads.0.0.weight                                      2,097,152  train
+  task_heads.0.0.bias                                            1,024  train
+  task_heads.0.3.weight                                          1,024  train
+  task_heads.0.3.bias                                                1  train
+  task_heads.1.0.weight                                      2,097,152  train
+  task_heads.1.0.bias                                            1,024  train
+  task_heads.1.3.weight                                          1,024  train
+  task_heads.1.3.bias                                                1  train
+  task_heads.2.0.weight                                      2,097,152  train
+  task_heads.2.0.bias                                            1,024  train
+  task_heads.2.3.weight                                          1,024  train
+  task_heads.2.3.bias                                                1  train
+  task_heads.3.0.weight                                      2,097,152  train
+  task_heads.3.0.bias                                            1,024  train
+  task_heads.3.3.weight                                          1,024  train
+  task_heads.3.3.bias                                                1  train
+  task_heads.4.0.weight                                      2,097,152  train
+  task_heads.4.0.bias                                            1,024  train
+  task_heads.4.3.weight                                          1,024  train
+  task_heads.4.3.bias                                                1  train
