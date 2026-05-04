@@ -74,28 +74,38 @@ The remainder of this report is organized as follows: Section~\ref{sec:schedule}
 \section{Project Schedule}
 \label{sec:schedule}
 
-Table~\ref{tab:schedule} summarizes the project timeline. Development was tracked using GitHub Issues and Milestones on the project repository.
+Table~\ref{tab:schedule} summarizes the project timeline, derived from the Git commit history across the \texttt{main}, \texttt{weight-focus}, and \texttt{MoE} branches.
 
 \begin{table}[H]
 \centering
-\caption{Project schedule with key milestones.}
+\caption{Project schedule with key milestones (from Git history).}
 \label{tab:schedule}
-\begin{tabular}{@{}ll@{}}
+\begin{tabular}{@{}lll@{}}
 \toprule
-\textbf{Date} & \textbf{Milestone} \\
+\textbf{Date} & \textbf{Activity} & \textbf{Branch} \\
 \midrule
-03/11/2026 & Project description released \\
-03/14--03/20 & Topic selection, literature review, dataset exploration \\
-03/20--03/26 & Data download pipeline, initial InceptionV3 experiments \\
-03/26/2026 & \textbf{Proposal submitted} (GitHub link posted to Canvas) \\
-03/27--04/06 & Baseline CNN implementation and initial training runs \\
-04/07--04/13 & Weight-Focus variant implementation and training \\
-04/14--04/20 & Mixture of Experts variant implementation and training \\
-04/21--04/27 & Comparative analysis, visualization, and presentation preparation \\
-04/27/2026 & \textbf{Presentation slides posted to GitHub} \\
-04/28--04/30 & \textbf{Oral presentations} \\
-04/30--05/05 & Final report writing and polishing \\
-05/05/2026 & \textbf{Final report due} \\
+03/26 & \textbf{Proposal submitted}; initial repository commit & \texttt{main} \\
+04/15 & Dataset download script; GCS pipeline for Nutrition5k images & \texttt{main} \\
+04/16 & Baseline CNN: training/test code, InceptionV3 backbone, & \texttt{main} \\
+       & \quad data metadata, aux\_logits fix, training plots, & \\
+       & \quad per-nutrient MAE\%, backbone freeze, cosine annealing, & \\
+       & \quad augmentations, side-angle pre-flip, dropout/weight decay, & \\
+       & \quad early stopping, verify images script & \\
+04/17 & Overfitting fixes: sub-sample side frames, label normalization, & \texttt{main} \\
+       & \quad stronger regularization; batch size 32; save\_experiment script & \\
+\cmidrule(lr){1-3}
+04/17 & \textbf{Weight-Focus branch created}: added mass-focused loss & \texttt{weight-focus} \\
+       & \quad weighting (3$\times$ mass); mass-conditioned architecture & \\
+04/17 & \textbf{MoE branch created}: gating network, 4 expert networks, & \texttt{MoE} \\
+       & \quad load-balancing loss & \\
+\cmidrule(lr){1-3}
+04/20 & Comparative analysis: comparison plots, test.py argparse, & \texttt{main} \\
+       & \quad label\_mean in test/train, outlier finder, & \\
+       & \quad Weight-Focus test fix & \\
+04/24 & \textbf{Final presentation slides} posted to GitHub & \texttt{main} \\
+04/28--30 & \textbf{Oral presentations} & --- \\
+05/01 & Updated .gitignore; added report directory & \texttt{main} \\
+05/05 & \textbf{Final report due} & --- \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -183,9 +193,9 @@ where $\mathbf{W}_k^{(1)} \in \mathbb{R}^{4096 \times 4096}$ and $\mathbf{w}_k^{
 
 \subsection{Architecture 2: Weight-Focus}
 
-The Weight-Focus variant is motivated by the observation that food mass (weight) is strongly correlated with caloric and macronutrient content. By predicting mass first and conditioning the remaining predictions on the mass estimate, we hypothesize that the model can better calibrate its nutritional estimates.
+The Weight-Focus variant is motivated by the observation that food mass (weight) is strongly correlated with caloric and macronutrient content. By predicting mass first and conditioning the remaining predictions on the mass estimate, we hypothesize that the model can better calibrate its nutritional estimates. This variant also uses a \textbf{weighted per-task loss} with \texttt{TASK\_WEIGHTS = [1.0, 3.0, 1.0, 1.0, 1.0]}, giving the mass prediction 3$\times$ the loss weight of other nutrients to prioritize accurate mass estimation.
 
-The architecture is identical to the Baseline through the shared FC layers. The key difference is:
+The architecture is identical to the Baseline through the shared FC layers. The key differences are:
 \begin{enumerate}
   \item A dedicated \textbf{mass head} predicts mass first: $\hat{y}_{\text{mass}} = f_{\text{mass}}(\mathbf{h})$
   \item Four \textbf{conditioned heads} for calories, fat, carbs, and protein each receive the shared representation \emph{concatenated} with the mass prediction:
@@ -195,6 +205,12 @@ The architecture is identical to the Baseline through the shared FC layers. The 
 \end{equation}
 
 where $[\cdot;\cdot]$ denotes concatenation, resulting in a 4097-dimensional input to each conditioned head (4096 from shared features + 1 from mass prediction).
+
+The weighted per-task loss is computed as:
+\begin{equation}
+  \mathcal{L}_{\text{WF}} = \frac{1}{N} \sum_{i=1}^{N} \frac{1}{5} \sum_{k=1}^{5} w_k \left| \hat{y}_k^{(i)} - y_k^{(i)} \right|
+\end{equation}
+where $w_k$ are the task weights ($w_{\text{mass}} = 3.0$, all others $= 1.0$). This ensures the mass head receives a stronger gradient signal, which is critical since the conditioned heads depend on its output.
 
 \textbf{Total parameters}: 130,903,013 (109,117,445 trainable).
 
@@ -222,15 +238,28 @@ The architecture consists of:
   \end{equation}
 \end{enumerate}
 
+Unlike the other two architectures, the MoE model's \texttt{forward()} method returns a tuple \texttt{(predictions, balance\_loss)}, where the balance loss is an auxiliary regularization term that penalizes uneven expert utilization:
+\begin{equation}
+  \mathcal{L}_{\text{balance}} = K \sum_{i=1}^{K} \bar{g}_i^2
+\end{equation}
+where $\bar{g}_i = \frac{1}{N}\sum_{n=1}^{N} g_i^{(n)}$ is the mean gate weight for expert $i$ across the batch. This encourages the gate to distribute inputs across all experts rather than collapsing to a single dominant expert.
+
 \textbf{Total parameters}: 65,860,585 (44,075,017 trainable) --- roughly half the parameters of the other two architectures.
 
 \subsection{Loss Function}
 
-Following the reference paper, we use the \textbf{L1 loss} (Mean Absolute Error) for training:
+Following the reference paper, we use the \textbf{L1 loss} (Mean Absolute Error) as the base training loss:
 \begin{equation}
-  \mathcal{L} = \frac{1}{N} \sum_{i=1}^{N} \frac{1}{5} \sum_{k=1}^{5} \left| \hat{y}_k^{(i)} - y_k^{(i)} \right|
+  \mathcal{L}_{\text{L1}} = \frac{1}{N} \sum_{i=1}^{N} \frac{1}{5} \sum_{k=1}^{5} \left| \hat{y}_k^{(i)} - y_k^{(i)} \right|
 \end{equation}
 where $\hat{y}_k^{(i)}$ and $y_k^{(i)}$ are the predicted and ground-truth normalized values for nutrient $k$ of sample $i$. L1 loss is preferred over L2 (MSE) because it is more robust to outliers, which are common in food nutrition data (e.g., dishes with unusually high calorie counts).
+
+Each model variant uses a different total loss:
+\begin{itemize}
+  \item \textbf{Baseline CNN}: Standard L1 loss ($\mathcal{L} = \mathcal{L}_{\text{L1}}$).
+  \item \textbf{Weight-Focus}: Weighted per-task L1 loss ($\mathcal{L} = \mathcal{L}_{\text{WF}}$) with mass weighted 3$\times$ (see Section~\ref{sec:network}, Architecture 2).
+  \item \textbf{MoE}: L1 loss plus a load-balancing regularizer ($\mathcal{L} = \mathcal{L}_{\text{L1}} + 0.01 \cdot \mathcal{L}_{\text{balance}}$) to prevent expert collapse.
+\end{itemize}
 
 \subsection{Evaluation Metrics}
 
@@ -287,6 +316,24 @@ Loss function & L1 (MAE) \\
 Validation split & 10\% of training dishes \\
 Early stopping patience & 15 epochs \\
 Image sources & Overhead + side-angle (cameras B, C) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Table~\ref{tab:variant_hyperparams} lists the hyperparameters that differ between model variants.
+
+\begin{table}[H]
+\centering
+\caption{Variant-specific hyperparameters.}
+\label{tab:variant_hyperparams}
+\begin{tabular}{@{}llll@{}}
+\toprule
+\textbf{Parameter} & \textbf{Baseline} & \textbf{Weight-Focus} & \textbf{MoE} \\
+\midrule
+Task weights & Equal (1.0 each) & [1, \textbf{3}, 1, 1, 1] & Equal (1.0 each) \\
+Balance loss weight & --- & --- & 0.01 \\
+Num.\ experts & --- & --- & 4 \\
+Task head input dim & 4096 & 4096 / 4097 & 2048 \\
 \bottomrule
 \end{tabular}
 \end{table}
@@ -396,6 +443,7 @@ Trainable Parameters & 109.1M & 109.1M & 44.1M \\
 Shared FC Dimension & 4096 & 4096 & --- \\
 Expert Networks & --- & --- & 4 $\times$ 2048 \\
 Task Head Input Dim & 4096 & 4096/4097 & 2048 \\
+Loss & L1 & Weighted L1 (mass 3$\times$) & L1 + balance \\
 Best Val MAE & \textbf{20.36} & 21.36 & 21.99 \\
 Best Epoch & 93 & 79 & 94 \\
 \bottomrule
@@ -485,9 +533,11 @@ The most notable finding is that the simplest architecture---the Baseline CNN---
 
   \item \textbf{Dataset size}: With only $\sim$4,000 unique dishes (9,409 training samples including multiple viewpoints), the dataset may be too small for the MoE model to learn meaningful expert specialization. The gate network may not have enough signal to differentiate between food types.
 
-  \item \textbf{Mass conditioning overhead}: In the Weight-Focus variant, errors in the mass prediction propagate to all other nutrient predictions, potentially amplifying mistakes rather than improving accuracy. The mass head's errors become a source of noise for the conditioned heads.
+  \item \textbf{Mass conditioning overhead}: In the Weight-Focus variant, despite the 3$\times$ weighted loss on mass to prioritize its accuracy, errors in the mass prediction still propagate to all other nutrient predictions via the concatenated 4097-dim input. The weighted loss helps mass accuracy but the cascading error amplification appears to negate any benefit from the structural prior.
 
-  \item \textbf{Regularization balance}: The larger FC layers in the Baseline model, combined with aggressive dropout ($p = 0.6$), seem to strike a better balance between capacity and regularization than the MoE's smaller experts.
+  \item \textbf{Load-balancing regularization}: The MoE variant includes a balance loss ($\lambda = 0.01$) to prevent expert collapse. While this successfully maintains expert utilization, the additional loss term competes with the primary L1 objective during optimization, potentially distracting the model from learning the best nutritional predictions.
+
+  \item \textbf{Regularization balance}: The larger FC layers in the Baseline model, combined with aggressive dropout ($p = 0.6$), seem to strike a better balance between capacity and regularization than the MoE's smaller 2048-dim experts.
 \end{enumerate}
 
 \subsubsection{Per-Nutrient Analysis}
@@ -648,6 +698,127 @@ class NutritionModel(nn.Module):
         shared_out = self.shared(features)
         outputs = [head(shared_out) for head in self.task_heads]
         return torch.cat(outputs, dim=1)
+\end{lstlisting}
+
+\subsection{Weight-Focus Model Architecture (\texttt{weight-focus} branch)}
+
+\begin{lstlisting}[caption={NutritionModel class --- Weight-Focus architecture with mass-conditioned heads.}]
+class NutritionModel(nn.Module):
+    """
+    Mass-conditioned multi-task regression head.
+    backbone -> shared 2x FC(4096) -> mass head -> mass_pred
+                                    -> 4 conditioned heads (shared + mass_pred)
+    """
+    MASS_IDX = 1  # index of mass in output tensor
+    OTHER_IDXS = [0, 2, 3, 4]  # calories, fat, carbs, protein
+
+    def __init__(self, num_tasks=5, dropout=0.6):
+        super().__init__()
+        self.backbone = models.inception_v3(
+            weights=models.Inception_V3_Weights.IMAGENET1K_V1,
+            aux_logits=True)
+        self.backbone.aux_logits = False
+        self.backbone.AuxLogits = None
+        self.backbone.fc = nn.Identity()
+
+        self.shared = nn.Sequential(
+            nn.Flatten(),
+            nn.Linear(2048, 4096), nn.ReLU(inplace=True), nn.Dropout(dropout),
+            nn.Linear(4096, 4096), nn.ReLU(inplace=True), nn.Dropout(dropout))
+
+        # Mass head: predicted independently
+        self.mass_head = nn.Sequential(
+            nn.Linear(4096, 4096), nn.ReLU(inplace=True),
+            nn.Dropout(dropout), nn.Linear(4096, 1))
+
+        # Conditioned heads: input is 4097 = 4096 shared + 1 mass pred
+        self.conditioned_heads = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(4097, 4096), nn.ReLU(inplace=True),
+                nn.Dropout(dropout), nn.Linear(4096, 1))
+            for _ in range(num_tasks - 1)])
+
+    def forward(self, x):
+        features = self.backbone(x)
+        shared_out = self.shared(features)
+        mass_pred = self.mass_head(shared_out)           # (B, 1)
+        cond_input = torch.cat([shared_out, mass_pred], dim=1)  # (B, 4097)
+        cond_preds = [head(cond_input) for head in self.conditioned_heads]
+        outputs = [None] * 5
+        outputs[self.MASS_IDX] = mass_pred
+        for i, idx in enumerate(self.OTHER_IDXS):
+            outputs[idx] = cond_preds[i]
+        return torch.cat(outputs, dim=1)                 # (B, 5)
+\end{lstlisting}
+
+The Weight-Focus training loop uses a weighted per-task loss:
+\begin{lstlisting}[caption={Weighted loss computation in Weight-Focus training.}]
+TASK_WEIGHTS = [1.0, 3.0, 1.0, 1.0, 1.0]  # prioritize mass prediction
+
+# In train_one_epoch():
+tw = torch.tensor(TASK_WEIGHTS, dtype=torch.float32).to(device)
+loss = ((preds - norm_labels).abs() * tw).mean()
+\end{lstlisting}
+
+\subsection{Mixture of Experts Model Architecture (\texttt{MoE} branch)}
+
+\begin{lstlisting}[caption={NutritionModel class --- Mixture of Experts architecture.}]
+class NutritionModel(nn.Module):
+    """
+    MoE multi-task regression.
+    backbone (2048) -> gate (softmax over N experts)
+                    -> N expert networks (2048->2048->2048)
+                    -> weighted sum -> per-task heads (2048->1024->1) x 5
+    forward() returns (predictions, balance_loss).
+    """
+    def __init__(self, num_tasks=5, num_experts=4, dropout=0.6):
+        super().__init__()
+        self.num_experts = num_experts
+        self.backbone = models.inception_v3(
+            weights=models.Inception_V3_Weights.IMAGENET1K_V1,
+            aux_logits=True)
+        self.backbone.aux_logits = False
+        self.backbone.AuxLogits = None
+        self.backbone.fc = nn.Identity()
+
+        self.gate = nn.Sequential(
+            nn.Flatten(), nn.Linear(2048, num_experts),
+            nn.Softmax(dim=1))
+
+        self.experts = nn.ModuleList([
+            nn.Sequential(
+                nn.Flatten(),
+                nn.Linear(2048, 2048), nn.ReLU(inplace=True), nn.Dropout(dropout),
+                nn.Linear(2048, 2048), nn.ReLU(inplace=True), nn.Dropout(dropout))
+            for _ in range(num_experts)])
+
+        self.task_heads = nn.ModuleList([
+            nn.Sequential(
+                nn.Linear(2048, 1024), nn.ReLU(inplace=True),
+                nn.Dropout(dropout), nn.Linear(1024, 1))
+            for _ in range(num_tasks)])
+
+    def forward(self, x):
+        features = self.backbone(x)
+        gate_weights = self.gate(features)               # (B, num_experts)
+        expert_outs = torch.stack(
+            [e(features) for e in self.experts], dim=1)  # (B, num_experts, 2048)
+        combined = (gate_weights.unsqueeze(-1) * expert_outs).sum(dim=1)
+        outputs = [head(combined) for head in self.task_heads]
+        preds = torch.cat(outputs, dim=1)
+        # Load-balancing loss
+        importance = gate_weights.mean(dim=0)
+        balance_loss = self.num_experts * (importance ** 2).sum()
+        return preds, balance_loss
+\end{lstlisting}
+
+The MoE training loop adds the balance loss to the primary L1 loss:
+\begin{lstlisting}[caption={MoE training step with balance loss.}]
+BALANCE_LOSS_WEIGHT = 0.01
+
+# In train_one_epoch():
+preds, balance_loss = model(images)
+loss = criterion(preds, norm_labels) + BALANCE_LOSS_WEIGHT * balance_loss
 \end{lstlisting}
 
 \subsection{Dataset Class (\texttt{Code/train.py})}
